@@ -13,6 +13,6 @@ final readonly class CitationResult
         $end = Contract::integer($raw['end_offset']);
         Contract::check($end > $start);
 
-        return new self(Contract::uuid($raw['document_id']), Contract::integer($raw['page_number'], 1), Contract::text($raw['quote']), $start, $end);
+        return new self(Contract::uuid($raw['document_id']), Contract::integer($raw['page_number'], 1, 2147483647), Contract::text($raw['quote']), $start, $end);
     }
 }

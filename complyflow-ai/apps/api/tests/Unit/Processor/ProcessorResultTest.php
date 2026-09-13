@@ -9,6 +9,20 @@ use PHPUnit\Framework\TestCase;
 
 class ProcessorResultTest extends TestCase
 {
+    public function test_page_numbers_must_fit_postgresql_integer_even_when_all_references_match(): void
+    {
+        $raw = self::valid();
+        $raw['findings'][0]['citations'][0]['page_number'] = 2147483647;
+        $raw['processed_documents'][0]['pages'][0]['page_number'] = 2147483647;
+        $raw['processed_documents'][0]['chunks'][0]['page_number'] = 2147483647;
+        $this->assertSame(2147483647, ProcessorResult::fromArray($raw)->findings[0]->citations[0]->pageNumber);
+        $raw['findings'][0]['citations'][0]['page_number'] = 2147483648;
+        $raw['processed_documents'][0]['pages'][0]['page_number'] = 2147483648;
+        $raw['processed_documents'][0]['chunks'][0]['page_number'] = 2147483648;
+        $this->expectException(ProcessorException::class);
+        ProcessorResult::fromArray($raw);
+    }
+
     private static function valid(): array
     {
         return ['analysis_id' => '10000000-0000-4000-8000-000000000001', 'findings' => [[

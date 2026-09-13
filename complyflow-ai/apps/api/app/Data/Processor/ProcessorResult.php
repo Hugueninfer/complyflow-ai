@@ -48,14 +48,14 @@ final readonly class ProcessorResult
             $pages = [];
             foreach (Contract::list($document['pages']) as $page) {
                 $page = Contract::object($page, ['page_number', 'text', 'ocr_used']);
-                $number = Contract::integer($page['page_number'], 1);
+                $number = Contract::integer($page['page_number'], 1, 2147483647);
                 Contract::check(! isset($pages[$number]) && is_bool($page['ocr_used']));
                 $pages[$number] = Contract::text($page['text'], true);
             }
             $indexes = [];
             foreach (Contract::list($document['chunks']) as $chunk) {
                 $chunk = Contract::object($chunk, ['page_number', 'index', 'text', 'start_offset', 'end_offset', 'embedding']);
-                $number = Contract::integer($chunk['page_number'], 1);
+                $number = Contract::integer($chunk['page_number'], 1, 2147483647);
                 $index = Contract::integer($chunk['index']);
                 Contract::check(isset($pages[$number]) && ! isset($indexes[$index]));
                 $indexes[$index] = true;

@@ -43,9 +43,9 @@ final class Contract
         return $value;
     }
 
-    public static function integer(mixed $value, int $minimum = 0): int
+    public static function integer(mixed $value, int $minimum = 0, int $maximum = PHP_INT_MAX): int
     {
-        self::check(is_int($value) && $value >= $minimum);
+        self::check(is_int($value) && $value >= $minimum && $value <= $maximum);
 
         return $value;
     }

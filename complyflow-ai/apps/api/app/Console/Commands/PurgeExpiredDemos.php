@@ -30,6 +30,13 @@ class PurgeExpiredDemos extends Command
                     return false;
                 }
 
+                Organization::withTrashed()->whereKey($demoSession->organization_id)->lockForUpdate()->first();
+                // Transaction-local retention exception, also checked against expiry by the DB trigger.
+                DB::select('select set_config(?, ?, true)', ['complyflow.purge_demo', (string) $demoSession->organization_id]);
+                foreach (['supplier_decisions', 'finding_reviews', 'audit_logs'] as $table) {
+                    DB::table($table)->where('organization_id', $demoSession->organization_id)->delete();
+                }
+
                 DB::table('document_blobs')
                     ->where('organization_id', $demoSession->organization_id)
                     ->delete();
