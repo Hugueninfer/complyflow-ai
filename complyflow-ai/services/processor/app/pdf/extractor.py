@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import resource
+import select
 import signal
+import struct
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from io import BytesIO
 from multiprocessing import get_context
-from multiprocessing.connection import Connection, wait
+from time import monotonic
 
 from pypdf import PdfReader
 
@@ -23,6 +26,7 @@ MIN_EXTRACTED_TEXT_CHARS = 20
 PROCESS_MEMORY_LIMIT_BYTES = 256 * 1024 * 1024
 PROCESS_CPU_SECONDS = 20
 PROCESS_TIMEOUT_SECONDS = 30.0
+MAX_IPC_PAYLOAD_BYTES = MAX_TOTAL_TEXT_CHARS * 4 + MAX_PAGES * 128 + 1024
 PUBLIC_ERROR_CODES = frozenset({
     "invalid_pdf",
     "encrypted_pdf",
@@ -177,10 +181,15 @@ def _apply_resource_limits() -> None:
 
 
 def _extract_worker(
-    sender: Connection,
+    writer_fd: int,
+    reader_fd: int,
     data: bytes,
     ocr_engine: OcrEngine | None,
 ) -> None:
+    try:
+        os.close(reader_fd)
+    except OSError:
+        pass
     try:
         os.setsid()
         _apply_resource_limits()
@@ -194,11 +203,94 @@ def _extract_worker(
         result = ("error", "invalid_pdf")
 
     try:
-        sender.send(result)
+        status, payload = result
+        if status == "ok":
+            message = {
+                "status": "ok",
+                "pages": [
+                    {
+                        "number": page.number,
+                        "text": page.text,
+                        "ocr_used": page.ocr_used,
+                    }
+                    for page in payload
+                ],
+            }
+        else:
+            message = {"status": "error", "code": payload}
+        encoded = json.dumps(
+            message,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        if len(encoded) > MAX_IPC_PAYLOAD_BYTES:
+            encoded = b'{"status":"error","code":"pdf_limit_exceeded"}'
+        frame = memoryview(struct.pack("!I", len(encoded)) + encoded)
+        while frame:
+            frame = frame[os.write(writer_fd, frame):]
     except BaseException:
         pass
     finally:
-        sender.close()
+        try:
+            os.close(writer_fd)
+        except OSError:
+            pass
+
+
+def _read_exact_until(reader_fd: int, size: int, deadline: float) -> bytes:
+    output = bytearray()
+    while len(output) < size:
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise TimeoutError
+        readable, _, _ = select.select((reader_fd,), (), (), remaining)
+        if not readable:
+            raise TimeoutError
+        try:
+            chunk = os.read(reader_fd, min(64 * 1024, size - len(output)))
+        except BlockingIOError:
+            continue
+        if not chunk:
+            raise EOFError
+        output.extend(chunk)
+    return bytes(output)
+
+
+def _receive_result(reader_fd: int, deadline: float) -> list[ExtractedPage]:
+    os.set_blocking(reader_fd, False)
+    payload_size = struct.unpack("!I", _read_exact_until(reader_fd, 4, deadline))[0]
+    if payload_size == 0 or payload_size > MAX_IPC_PAYLOAD_BYTES:
+        raise ValueError
+    raw_payload = _read_exact_until(reader_fd, payload_size, deadline)
+    message = json.loads(raw_payload)
+    if not isinstance(message, dict) or message.get("status") not in {"ok", "error"}:
+        raise ValueError
+    if message["status"] == "error":
+        code = message.get("code")
+        if code not in PUBLIC_ERROR_CODES:
+            raise ValueError
+        raise PdfExtractionError(code)
+
+    raw_pages = message.get("pages")
+    if not isinstance(raw_pages, list) or len(raw_pages) > MAX_PAGES:
+        raise ValueError
+    pages: list[ExtractedPage] = []
+    total_chars = 0
+    for raw_page in raw_pages:
+        if not isinstance(raw_page, dict) or set(raw_page) != {
+            "number",
+            "text",
+            "ocr_used",
+        }:
+            raise ValueError
+        page = ExtractedPage(**raw_page)
+        if not isinstance(page.text, str) or not isinstance(page.ocr_used, bool):
+            raise ValueError
+        total_chars += len(page.text)
+        if len(page.text) > MAX_PAGE_CHARS or total_chars > MAX_TOTAL_TEXT_CHARS:
+            raise ValueError
+        pages.append(page)
+    return pages
 
 
 def _stop_process(process) -> None:
@@ -232,33 +324,37 @@ def extract_pages(
         raise PdfExtractionError("pdf_limit_exceeded")
 
     context = get_context("fork")
-    receiver, sender = context.Pipe(duplex=False)
+    reader_fd, writer_fd = os.pipe()
     process = context.Process(
         target=_extract_worker,
-        args=(sender, data, ocr_engine),
+        args=(writer_fd, reader_fd, data, ocr_engine),
         daemon=True,
     )
     result = None
     process_error = None
+    deadline = monotonic() + PROCESS_TIMEOUT_SECONDS
     try:
         process.start()
-        sender.close()
-        ready = wait((receiver, process.sentinel), timeout=PROCESS_TIMEOUT_SECONDS)
-        if receiver in ready or receiver.poll(0.05):
-            result = receiver.recv()
-        else:
-            process_error = "pdf_limit_exceeded"
-    except (EOFError, OSError, ValueError):
+        os.close(writer_fd)
+        writer_fd = -1
+        result = _receive_result(reader_fd, deadline)
+    except PdfExtractionError as error:
+        process_error = str(error)
+    except (EOFError, OSError, TimeoutError, TypeError, ValueError):
         process_error = "pdf_limit_exceeded"
     finally:
         _stop_process(process)
-        receiver.close()
-        sender.close()
+        try:
+            os.close(reader_fd)
+        except OSError:
+            pass
+        if writer_fd >= 0:
+            try:
+                os.close(writer_fd)
+            except OSError:
+                pass
         process.close()
 
     if process_error is not None:
         raise PdfExtractionError(process_error) from None
-    status, payload = result
-    if status == "error":
-        raise PdfExtractionError(payload) from None
-    return payload
+    return result

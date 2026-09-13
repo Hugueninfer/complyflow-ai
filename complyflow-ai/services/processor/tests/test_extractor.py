@@ -1,9 +1,12 @@
 from io import BytesIO
 import os
 from pathlib import Path
+from multiprocessing import get_context
 import resource
 import signal
+import struct
 import subprocess
+import sys
 from time import monotonic, sleep
 
 import pytest
@@ -211,6 +214,55 @@ def test_ocr_descendants_are_cleaned_up_with_the_isolated_process_group():
             os.kill(descendant_pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+
+
+def test_partial_ipc_frame_with_inherited_writer_respects_deadline_and_cleans_group(
+    monkeypatch,
+):
+    from app.pdf import extractor
+
+    descendant_pid = get_context("fork").Value("i", 0)
+
+    def partial_frame_worker(writer, *args):
+        os.setsid()
+        writer_fd = writer if isinstance(writer, int) else writer.fileno()
+        descendant = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                f"import os,time; time.sleep(1); os.close({writer_fd}); time.sleep(9)",
+            ],
+            pass_fds=(writer_fd,),
+        )
+        descendant_pid.value = descendant.pid
+        os.write(writer_fd, struct.pack("!I", 4096) + b"{")
+        os._exit(1)
+
+    monkeypatch.setattr(extractor, "_extract_worker", partial_frame_worker)
+    monkeypatch.setattr(extractor, "PROCESS_TIMEOUT_SECONDS", 0.05)
+    started = monotonic()
+
+    with pytest.raises(PdfExtractionError) as error:
+        extract_pages(FIXTURE.read_bytes())
+
+    elapsed = monotonic() - started
+    pid = descendant_pid.value
+    assert elapsed < 0.75
+    assert str(error.value) == "pdf_limit_exceeded"
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
+    assert pid > 0
+    deadline = monotonic() + 0.5
+    while monotonic() < deadline:
+        stat = Path(f"/proc/{pid}/stat")
+        if not stat.exists() or stat.read_text().split()[2] == "Z":
+            break
+        sleep(0.01)
+    else:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        finally:
+            pytest.fail("inherited IPC writer remained alive after timeout")
 
 
 def test_fixture_really_has_two_distinct_pdf_pages():
