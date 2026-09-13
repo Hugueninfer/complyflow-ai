@@ -13,6 +13,12 @@ class CreateDemoSession
 {
     private const TEMPLATE_SLUG = 'demo-template';
 
+    private const SUPPLIER_QUOTA = 10;
+
+    private const ANALYSIS_QUOTA = 3;
+
+    private const STORAGE_QUOTA_BYTES = 15 * 1024 * 1024;
+
     public function handle(): DemoSession
     {
         return DB::transaction(function (): DemoSession {
@@ -35,13 +41,19 @@ class CreateDemoSession
                 $this->cloneTemplate($template, $organization, $user);
             }
 
+            $usage = $this->usageFor($organization);
+            $this->ensureWithinQuota($usage);
+
             $demoSession = DemoSession::query()->create([
                 'organization_id' => $organization->id,
                 'user_id' => $user->id,
                 'token_hash' => hash('sha256', Str::random(64)),
-                'supplier_quota' => 10,
-                'analysis_quota' => 3,
-                'storage_quota_bytes' => 15 * 1024 * 1024,
+                'supplier_quota' => self::SUPPLIER_QUOTA,
+                'analysis_quota' => self::ANALYSIS_QUOTA,
+                'storage_quota_bytes' => self::STORAGE_QUOTA_BYTES,
+                'suppliers_used' => $usage['suppliers'],
+                'analyses_used' => $usage['analyses'],
+                'storage_used_bytes' => $usage['storage_bytes'],
                 'expires_at' => now()->addHours(24),
             ]);
 
@@ -215,6 +227,34 @@ class CreateDemoSession
         $extension = pathinfo($storageName, PATHINFO_EXTENSION);
 
         return $extension === '' ? '' : '.'.$extension;
+    }
+
+    /**
+     * @return array{suppliers: int, analyses: int, storage_bytes: int}
+     */
+    private function usageFor(Organization $organization): array
+    {
+        return [
+            'suppliers' => DB::table('suppliers')->where('organization_id', $organization->id)->count(),
+            'analyses' => DB::table('analysis_runs')->where('organization_id', $organization->id)->count(),
+            'storage_bytes' => (int) DB::table('documents')
+                ->where('organization_id', $organization->id)
+                ->sum('size_bytes'),
+        ];
+    }
+
+    /**
+     * @param  array{suppliers: int, analyses: int, storage_bytes: int}  $usage
+     */
+    private function ensureWithinQuota(array $usage): void
+    {
+        if (
+            $usage['suppliers'] > self::SUPPLIER_QUOTA
+            || $usage['analyses'] > self::ANALYSIS_QUOTA
+            || $usage['storage_bytes'] > self::STORAGE_QUOTA_BYTES
+        ) {
+            throw new DemoTemplateQuotaExceeded('Demo template exceeds quota.');
+        }
     }
 
     /**

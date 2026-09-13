@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Services\Demo\CreateDemoSession;
+use App\Services\Demo\DemoTemplateQuotaExceeded;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -12,7 +13,11 @@ class DemoSessionController extends Controller
 {
     public function store(Request $request, CreateDemoSession $createDemoSession): JsonResponse
     {
-        $demoSession = $createDemoSession->handle();
+        try {
+            $demoSession = $createDemoSession->handle();
+        } catch (DemoTemplateQuotaExceeded) {
+            return response()->json(['message' => 'Demo template exceeds quota.'], 503);
+        }
 
         Auth::guard('web')->login($demoSession->user);
         $request->session()->regenerate();
