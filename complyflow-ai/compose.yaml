@@ -81,6 +81,8 @@ services:
     networks:
       - internal
     depends_on:
+      api:
+        condition: service_healthy
       postgres:
         condition: service_healthy
     healthcheck:

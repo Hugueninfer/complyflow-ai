@@ -20,3 +20,8 @@ WORKDIR /workspace/apps/api
 
 COPY apps/api/composer.json apps/api/composer.lock ./
 RUN composer install --no-interaction --prefer-dist --no-progress --no-scripts
+
+COPY infra/docker/api/entrypoint.sh /usr/local/bin/complyflow-api-entrypoint
+RUN chmod +x /usr/local/bin/complyflow-api-entrypoint
+
+ENTRYPOINT ["complyflow-api-entrypoint"]
