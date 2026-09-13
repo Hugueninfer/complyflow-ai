@@ -5,6 +5,7 @@ from time import monotonic
 from urllib.parse import urlsplit
 
 import httpx
+import anyio
 from pydantic import ValidationError
 
 from app.providers.base import AIProvider, AnalysisContext, ProviderError
@@ -63,25 +64,10 @@ class OpenAICompatibleProvider(AIProvider):
                 name='finding', strict=True, schema=FindingDraft.model_json_schema(),
             )),
         )
-        deadline = monotonic() + PROVIDER_TIMEOUT_SECONDS
-        try:
-            with httpx.Client(
-                timeout=PROVIDER_TIMEOUT_SECONDS, follow_redirects=False, trust_env=False,
-                transport=self.transport,
-            ) as client:
-                with client.stream('POST', self.url, json=payload, headers={
-                    'Authorization': 'Bearer ' + self.api_key,
-                }) as response:
-                    response.raise_for_status()
-                    raw = bytearray()
-                    for chunk in response.iter_bytes():
-                        if monotonic() > deadline:
-                            raise ProviderError('provider_unavailable')
-                        if len(raw) + len(chunk) > MAX_RESPONSE_BYTES:
-                            raise ProviderError('invalid_provider_response')
-                        raw.extend(chunk)
-        except httpx.HTTPError:
-            raise ProviderError('provider_unavailable') from None
+        # The pipeline's public contract is synchronous and runs in FastAPI's
+        # worker thread. Cancellable async I/O enforces a total HTTP deadline,
+        # including connection, response headers and a stalled/slow-drip body.
+        raw = anyio.run(self._request, payload)
         try:
             result = json.loads(raw)
             choices = result['choices']
@@ -96,3 +82,32 @@ class OpenAICompatibleProvider(AIProvider):
         except (ValueError, TypeError, KeyError, IndexError, AttributeError, ValidationError):
             raise ProviderError('invalid_provider_response') from None
         return finding
+
+    async def _request(self, payload: dict) -> bytes:
+        deadline = monotonic() + PROVIDER_TIMEOUT_SECONDS
+        try:
+            with anyio.fail_after(PROVIDER_TIMEOUT_SECONDS):
+                async with httpx.AsyncClient(
+                    timeout=PROVIDER_TIMEOUT_SECONDS, follow_redirects=False, trust_env=False,
+                    transport=self.transport,
+                ) as client:
+                    async with client.stream('POST', self.url, json=payload, headers={
+                        'Authorization': 'Bearer ' + self.api_key,
+                        'Accept-Encoding': 'identity',
+                    }) as response:
+                        response.raise_for_status()
+                        # Refuse compression before any body iteration invokes a
+                        # decoder. With identity, wire and decoded bytes coincide.
+                        encoding = response.headers.get('Content-Encoding', 'identity')
+                        if encoding.strip().lower() != 'identity':
+                            raise ProviderError('invalid_provider_response')
+                        raw = bytearray()
+                        async for chunk in response.aiter_bytes():
+                            if monotonic() > deadline:
+                                raise ProviderError('provider_unavailable')
+                            if len(raw) + len(chunk) > MAX_RESPONSE_BYTES:
+                                raise ProviderError('invalid_provider_response')
+                            raw.extend(chunk)
+                        return bytes(raw)
+        except (httpx.HTTPError, TimeoutError):
+            raise ProviderError('provider_unavailable') from None

@@ -105,3 +105,22 @@ def test_retrieval_rejects_invalid_embedding(vector):
 
     with pytest.raises(ValueError):
         HybridRetriever([context()], [vector])
+
+
+@pytest.mark.parametrize('reverse_input', [False, True])
+def test_retrieval_breaks_score_ties_by_document_page_then_index(reverse_input):
+    from app.retrieval.hybrid import HybridRetriever, embed_text
+
+    other_document = UUID('30000000-0000-4000-8000-000000000002')
+    contexts = [
+        context(document_id=other_document, page_number=1, index=0),
+        context(page_number=2, index=0),
+        context(page_number=1, index=1),
+        context(page_number=1, index=0),
+    ]
+    if reverse_input:
+        contexts.reverse()
+    results = HybridRetriever(contexts, [embed_text('Primeira pagina')] * 4).search('Primeira pagina')
+    assert [(item.document_id, item.page_number, item.index) for item in results] == [
+        (DOCUMENT_ID, 1, 0), (DOCUMENT_ID, 1, 1), (DOCUMENT_ID, 2, 0), (other_document, 1, 0),
+    ]

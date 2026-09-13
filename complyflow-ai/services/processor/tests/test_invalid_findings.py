@@ -63,3 +63,22 @@ def test_missing_provider_output_requires_search_record():
 
     with pytest.raises(InvalidFinding):
         AnalysisPipeline(provider=InvalidProvider()).run(pdf_request())
+
+
+def test_rejects_exact_quote_on_real_page_outside_retrieved_contexts():
+    from app.pipeline.analyze import AnalysisPipeline, InvalidCitation
+
+    class UnretrievedPageProvider:
+        def analyze(self, requirement, contexts):
+            assert [item.page_number for item in contexts] == [1]
+            payload = valid_response()['findings'][0]
+            payload['citations'][0].update(
+                page_number=2, quote='Segunda pagina', start_offset=0, end_offset=14,
+            )
+            return FindingDraft.model_validate(payload)
+
+    request = pdf_request()
+    request.requirements[0].criterion = 'Primeira'
+    request.requirements[0].evaluation_text = 'Primeira'
+    with pytest.raises(InvalidCitation, match='^invalid_citation$'):
+        AnalysisPipeline(provider=UnretrievedPageProvider()).run(request)

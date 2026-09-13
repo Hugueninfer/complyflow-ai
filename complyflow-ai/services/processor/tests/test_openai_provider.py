@@ -1,5 +1,8 @@
 import json
+import gzip
+from time import monotonic, sleep
 
+import anyio
 import httpx
 import pytest
 
@@ -131,11 +134,106 @@ def test_streaming_response_cannot_extend_total_provider_deadline(monkeypatch):
     clock = {'now': 0.0}
     monkeypatch.setattr(openai_compatible, 'monotonic', lambda: clock['now'], raising=False)
 
-    class SlowStream(httpx.SyncByteStream):
-        def __iter__(self):
+    class SlowStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
             clock['now'] = 20.1
             yield json.dumps(envelope()).encode()
 
     provider = provider_with_response(lambda request: httpx.Response(200, stream=SlowStream()))
     with pytest.raises(ProviderError, match='^provider_unavailable$'):
         provider.analyze(requirement(), [context()])
+
+
+@pytest.mark.parametrize('phase', ['headers', 'body'])
+def test_total_deadline_interrupts_blocked_http_operation_and_closes_resources(monkeypatch, phase):
+    from app.providers import openai_compatible
+    from app.providers.base import ProviderError
+
+    monkeypatch.setattr(openai_compatible, 'PROVIDER_TIMEOUT_SECONDS', 0.03)
+    state = {'transport_closed': False, 'stream_closed': False}
+
+    class BlockingStream(httpx.SyncByteStream, httpx.AsyncByteStream):
+        def __iter__(self):
+            sleep(0.2)
+            yield json.dumps(envelope()).encode()
+
+        async def __aiter__(self):
+            await anyio.sleep(0.2)
+            yield json.dumps(envelope()).encode()
+
+        def close(self):
+            state['stream_closed'] = True
+
+        async def aclose(self):
+            state['stream_closed'] = True
+
+    class BlockingTransport(httpx.BaseTransport, httpx.AsyncBaseTransport):
+        def handle_request(self, request):
+            if phase == 'headers':
+                sleep(0.2)
+            return httpx.Response(200, stream=BlockingStream())
+
+        async def handle_async_request(self, request):
+            if phase == 'headers':
+                await anyio.sleep(0.2)
+            return httpx.Response(200, stream=BlockingStream())
+
+        def close(self):
+            state['transport_closed'] = True
+
+        async def aclose(self):
+            state['transport_closed'] = True
+
+    provider = openai_compatible.OpenAICompatibleProvider(
+        base_url='https://ai.example/v1', api_key='test-only', model='demo',
+        transport=BlockingTransport(),
+    )
+    start = monotonic()
+    with pytest.raises(ProviderError, match='^provider_unavailable$'):
+        provider.analyze(requirement(), [context()])
+    assert monotonic() - start < 0.15
+    assert state['transport_closed'] is True
+    if phase == 'body':
+        assert state['stream_closed'] is True
+
+
+@pytest.mark.parametrize('encoding', ['gzip', 'deflate', 'br', 'gzip, identity'])
+def test_compressed_response_is_rejected_before_body_iteration(encoding):
+    from app.providers.base import ProviderError
+
+    state = {'body_read': False}
+
+    class CompressedStream(httpx.SyncByteStream, httpx.AsyncByteStream):
+        def __iter__(self):
+            state['body_read'] = True
+            yield gzip.compress(json.dumps(envelope()).encode())
+
+        async def __aiter__(self):
+            state['body_read'] = True
+            yield gzip.compress(json.dumps(envelope()).encode())
+
+    provider = provider_with_response(lambda request: httpx.Response(
+        200, headers={'Content-Encoding': encoding}, stream=CompressedStream(),
+    ))
+    with pytest.raises(ProviderError, match='^invalid_provider_response$'):
+        provider.analyze(requirement(), [context()])
+    assert state['body_read'] is False
+
+
+@pytest.mark.parametrize('size,accepted', [(65536, True), (65537, False)])
+def test_identity_response_has_equal_wire_and_decoded_byte_limits(size, accepted):
+    from app.providers.base import ProviderError
+
+    content = json.dumps(envelope()).encode()
+    content += b' ' * (size - len(content))
+
+    def response(request):
+        assert request.headers['accept-encoding'] == 'identity'
+        return httpx.Response(200, headers={'Content-Encoding': 'identity'}, content=content)
+
+    provider = provider_with_response(response)
+    if accepted:
+        assert provider.analyze(requirement(), [context()]).status == 'met'
+    else:
+        with pytest.raises(ProviderError, match='^invalid_provider_response$'):
+            provider.analyze(requirement(), [context()])
