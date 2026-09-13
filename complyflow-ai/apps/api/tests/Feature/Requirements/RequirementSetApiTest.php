@@ -3,6 +3,7 @@
 namespace Tests\Feature\Requirements;
 
 use App\Models\Organization;
+use App\Models\RequirementSet;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -146,6 +147,162 @@ class RequirementSetApiTest extends TestCase
         $this->assertSame($source->organization_id, $clone->organization_id);
         $this->assertSame(1, DB::table('requirements')->where('requirement_set_id', $source->id)->count());
         $this->assertSame(1, DB::table('requirements')->where('requirement_set_id', $clone->id)->count());
+    }
+
+    public function test_descendant_versions_anchor_to_root_and_v1_cannot_branch_after_v2_is_renamed(): void
+    {
+        $organization = $this->organization('Northwind');
+        $owner = $this->userWithRole($organization, 'owner');
+        $v1Id = $this->createSet($owner);
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$v1Id.'/publish')->assertOk();
+        $v2Id = $this->actingAs($owner)
+            ->postJson('/api/v1/requirement-sets/'.$v1Id.'/versions')
+            ->assertCreated()
+            ->json('data.id');
+
+        $this->actingAs($owner)->putJson('/api/v1/requirement-sets/'.$v2Id, [
+            'name' => 'Renamed Security',
+        ])->assertOk();
+        $this->actingAs($owner)
+            ->postJson('/api/v1/requirement-sets/'.$v1Id.'/versions')
+            ->assertStatus(409);
+
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$v2Id.'/publish')->assertOk();
+        $v3Id = $this->actingAs($owner)
+            ->postJson('/api/v1/requirement-sets/'.$v2Id.'/versions')
+            ->assertCreated()
+            ->assertJsonPath('data.version', 3)
+            ->json('data.id');
+
+        $v1 = DB::table('requirement_sets')->where('public_id', $v1Id)->first();
+        $v2 = DB::table('requirement_sets')->where('public_id', $v2Id)->first();
+        $v3 = DB::table('requirement_sets')->where('public_id', $v3Id)->first();
+        $this->assertSame($v1->id, $v2->parent_id);
+        $this->assertSame($v1->id, $v3->parent_id);
+    }
+
+    public function test_soft_deleted_version_reserves_sequence_and_retry_returns_controlled_conflict(): void
+    {
+        $organization = $this->organization('Northwind');
+        $owner = $this->userWithRole($organization, 'owner');
+        $v1Id = $this->createSet($owner);
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$v1Id.'/publish')->assertOk();
+        $v2Id = $this->actingAs($owner)
+            ->postJson('/api/v1/requirement-sets/'.$v1Id.'/versions')
+            ->assertCreated()
+            ->json('data.id');
+        $this->actingAs($owner)->deleteJson('/api/v1/requirement-sets/'.$v2Id)->assertNoContent();
+
+        $this->actingAs($owner)
+            ->postJson('/api/v1/requirement-sets/'.$v1Id.'/versions')
+            ->assertStatus(409)
+            ->assertJsonPath('message', 'The next requirement set version already exists.');
+    }
+
+    public function test_duplicate_name_and_version_are_rejected_on_create_and_update(): void
+    {
+        $organization = $this->organization('Northwind');
+        $owner = $this->userWithRole($organization, 'owner');
+        $firstId = $this->createSet($owner);
+        $secondId = $this->createSet($owner, 'Privacy Controls');
+
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets', [
+            'name' => 'Vendor Security',
+            'requirements' => [$this->requirement('DUP-001', 'Duplicate', 1)],
+        ])->assertUnprocessable()->assertJsonValidationErrors('name');
+
+        $this->actingAs($owner)->putJson('/api/v1/requirement-sets/'.$secondId, [
+            'name' => 'Vendor Security',
+        ])->assertUnprocessable()->assertJsonValidationErrors('name');
+        $this->assertDatabaseHas('requirement_sets', [
+            'public_id' => $firstId,
+            'name' => 'Vendor Security',
+        ]);
+        $this->assertDatabaseHas('requirement_sets', [
+            'public_id' => $secondId,
+            'name' => 'Privacy Controls',
+        ]);
+    }
+
+    public function test_requirement_set_update_may_keep_its_own_name_and_version(): void
+    {
+        $organization = $this->organization('Northwind');
+        $owner = $this->userWithRole($organization, 'owner');
+        $setId = $this->createSet($owner);
+
+        $this->actingAs($owner)->putJson('/api/v1/requirement-sets/'.$setId, [
+            'name' => 'Vendor Security',
+            'requirements' => [$this->requirement('SEC-002', 'Encryption', 2)],
+        ])->assertOk()
+            ->assertJsonPath('data.name', 'Vendor Security')
+            ->assertJsonPath('data.requirements.0.code', 'SEC-002');
+    }
+
+    public function test_requirement_name_unique_constraint_race_returns_validation_error_and_rolls_back(): void
+    {
+        $organization = $this->organization('Northwind');
+        $owner = $this->userWithRole($organization, 'owner');
+        RequirementSet::query()->count();
+        $insertedByRace = false;
+
+        RequirementSet::creating(function (RequirementSet $set) use (&$insertedByRace): void {
+            if ($insertedByRace || $set->name !== 'Racing Controls' || $set->version !== 1) {
+                return;
+            }
+
+            $insertedByRace = true;
+            RequirementSet::query()->getQuery()->insert([
+                'public_id' => Str::uuid(),
+                'organization_id' => $set->organization_id,
+                'parent_id' => null,
+                'name' => $set->name,
+                'version' => 1,
+                'status' => 'draft',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
+
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets', [
+            'name' => 'Racing Controls',
+            'requirements' => [$this->requirement('RACE-001', 'Race', 1)],
+        ])->assertUnprocessable()->assertJsonValidationErrors('name');
+
+        $this->assertDatabaseMissing('requirement_sets', ['name' => 'Racing Controls']);
+    }
+
+    public function test_requirement_version_unique_constraint_race_returns_controlled_conflict(): void
+    {
+        $organization = $this->organization('Northwind');
+        $owner = $this->userWithRole($organization, 'owner');
+        $v1Id = $this->createSet($owner, 'Race Controls');
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$v1Id.'/publish')->assertOk();
+        RequirementSet::query()->count();
+        $insertedByRace = false;
+
+        RequirementSet::creating(function (RequirementSet $set) use (&$insertedByRace): void {
+            if ($insertedByRace || $set->name !== 'Race Controls' || $set->version !== 2) {
+                return;
+            }
+
+            $insertedByRace = true;
+            RequirementSet::query()->getQuery()->insert([
+                'public_id' => Str::uuid(),
+                'organization_id' => $set->organization_id,
+                'parent_id' => $set->parent_id,
+                'name' => 'Concurrent renamed version',
+                'version' => $set->version,
+                'status' => 'draft',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
+
+        $this->actingAs($owner)
+            ->postJson('/api/v1/requirement-sets/'.$v1Id.'/versions')
+            ->assertStatus(409);
+
+        $this->assertSame(0, DB::table('requirement_sets')->where('version', 2)->count());
     }
 
     public function test_requirement_set_uuids_are_resolved_only_in_current_organization(): void

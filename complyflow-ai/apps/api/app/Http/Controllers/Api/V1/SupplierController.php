@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreSupplierRequest;
 use App\Models\DemoSession;
 use App\Models\Supplier;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 
 class SupplierController extends Controller
 {
@@ -24,24 +26,28 @@ class SupplierController extends Controller
     {
         Gate::authorize('create', Supplier::class);
 
-        $supplier = DB::transaction(function () use ($request): Supplier {
-            $demo = DemoSession::query()
-                ->where('user_id', $request->user()->getKey())
-                ->lockForUpdate()
-                ->first();
+        try {
+            $supplier = DB::transaction(function () use ($request): Supplier {
+                $demo = DemoSession::query()
+                    ->where('user_id', $request->user()->getKey())
+                    ->lockForUpdate()
+                    ->first();
 
-            if ($demo !== null && $demo->suppliers_used >= $demo->supplier_quota) {
-                abort(429, 'Demo quota exceeded.');
-            }
+                if ($demo !== null && $demo->suppliers_used >= $demo->supplier_quota) {
+                    abort(429, 'Demo quota exceeded.');
+                }
 
-            $supplier = Supplier::query()->create($request->safe()->only([
-                'name', 'tax_id', 'risk_level',
-            ]));
+                $supplier = Supplier::query()->create($request->safe()->only([
+                    'name', 'tax_id', 'risk_level',
+                ]));
 
-            $demo?->increment('suppliers_used');
+                $demo?->increment('suppliers_used');
 
-            return $supplier;
-        });
+                return $supplier;
+            });
+        } catch (QueryException $exception) {
+            $this->throwTaxIdConflict($exception);
+        }
 
         return response()->json(['data' => $this->data($supplier)], 201);
     }
@@ -58,7 +64,11 @@ class SupplierController extends Controller
     {
         $model = $this->resolve($supplier);
         Gate::authorize('update', $model);
-        $model->update($request->safe()->only(['name', 'tax_id', 'risk_level']));
+        try {
+            $model->update($request->safe()->only(['name', 'tax_id', 'risk_level']));
+        } catch (QueryException $exception) {
+            $this->throwTaxIdConflict($exception);
+        }
 
         return response()->json(['data' => $this->data($model->refresh())]);
     }
@@ -75,6 +85,24 @@ class SupplierController extends Controller
     private function resolve(string $publicId): Supplier
     {
         return Supplier::query()->wherePublicIdForCurrentOrganization($publicId)->firstOrFail();
+    }
+
+    private function throwTaxIdConflict(QueryException $exception): never
+    {
+        if (! $this->isUniqueViolation($exception)) {
+            throw $exception;
+        }
+
+        throw ValidationException::withMessages([
+            'tax_id' => ['The tax ID has already been taken in this organization.'],
+        ]);
+    }
+
+    private function isUniqueViolation(QueryException $exception): bool
+    {
+        $sqlState = (string) ($exception->errorInfo[0] ?? $exception->getCode());
+
+        return in_array($sqlState, ['23000', '23505'], true);
     }
 
     /** @return array<string, mixed> */

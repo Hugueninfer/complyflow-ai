@@ -28,6 +28,7 @@ class SupplierApiTest extends TestCase
         $organization = $this->organization('Northwind');
         $otherOrganization = $this->organization('Globex');
         $owner = $this->userWithRole($organization, 'owner');
+        $this->supplier($otherOrganization, 'Foreign duplicate', '42.108.921/0001-84');
 
         $response = $this->actingAs($owner)->postJson('/api/v1/suppliers', [
             'organization_id' => $otherOrganization->id,
@@ -52,7 +53,7 @@ class SupplierApiTest extends TestCase
         $organization = $this->organization('Northwind');
         $otherOrganization = $this->organization('Globex');
         $owner = $this->userWithRole($organization, 'owner');
-        $ownSupplier = $this->supplier($organization, 'Own supplier');
+        $ownSupplier = $this->supplier($organization, 'Own supplier', '42.108.921/0001-84');
         $foreignSupplier = $this->supplier($otherOrganization, 'Foreign supplier');
 
         $this->actingAs($owner)
@@ -64,6 +65,11 @@ class SupplierApiTest extends TestCase
             ->assertNotFound();
         $this->actingAs($owner)
             ->putJson('/api/v1/suppliers/'.$foreignSupplier->public_id, ['name' => 'Stolen'])
+            ->assertNotFound();
+        $this->actingAs($owner)
+            ->putJson('/api/v1/suppliers/'.$foreignSupplier->public_id, [
+                'tax_id' => $ownSupplier->tax_id,
+            ])
             ->assertNotFound();
         $this->actingAs($owner)
             ->deleteJson('/api/v1/suppliers/'.$foreignSupplier->public_id)
@@ -170,6 +176,73 @@ class SupplierApiTest extends TestCase
         $this->assertDatabaseCount('suppliers', 0);
     }
 
+    public function test_duplicate_tax_id_is_rejected_on_create_and_update_without_server_error(): void
+    {
+        $organization = $this->organization('Northwind');
+        $owner = $this->userWithRole($organization, 'owner');
+        $first = $this->supplier($organization, 'First supplier', '42.108.921/0001-84');
+        $second = $this->supplier($organization, 'Second supplier', '73.260.643/0001-08');
+
+        $this->actingAs($owner)->postJson('/api/v1/suppliers', [
+            'name' => 'Duplicate supplier',
+            'tax_id' => $first->tax_id,
+            'risk_level' => 'medium',
+        ])->assertUnprocessable()->assertJsonValidationErrors('tax_id');
+
+        $this->actingAs($owner)->putJson('/api/v1/suppliers/'.$second->public_id, [
+            'tax_id' => $first->tax_id,
+        ])->assertUnprocessable()->assertJsonValidationErrors('tax_id');
+        $this->assertDatabaseHas('suppliers', [
+            'id' => $second->id,
+            'tax_id' => '73.260.643/0001-08',
+        ]);
+    }
+
+    public function test_supplier_update_may_keep_its_own_tax_id(): void
+    {
+        $organization = $this->organization('Northwind');
+        $owner = $this->userWithRole($organization, 'owner');
+        $supplier = $this->supplier($organization, 'Original supplier', '42.108.921/0001-84');
+
+        $this->actingAs($owner)->putJson('/api/v1/suppliers/'.$supplier->public_id, [
+            'name' => 'Renamed supplier',
+            'tax_id' => $supplier->tax_id,
+        ])->assertOk()->assertJsonPath('data.name', 'Renamed supplier');
+    }
+
+    public function test_supplier_unique_constraint_race_returns_validation_error_and_rolls_back(): void
+    {
+        $organization = $this->organization('Northwind');
+        $owner = $this->userWithRole($organization, 'owner');
+        Supplier::query()->count();
+        $insertedByRace = false;
+
+        Supplier::creating(function (Supplier $supplier) use (&$insertedByRace): void {
+            if ($insertedByRace || $supplier->tax_id !== '19.870.554/0001-70') {
+                return;
+            }
+
+            $insertedByRace = true;
+            Supplier::query()->getQuery()->insert([
+                'public_id' => Str::uuid(),
+                'organization_id' => $supplier->organization_id,
+                'name' => 'Concurrent supplier',
+                'tax_id' => $supplier->tax_id,
+                'risk_level' => 'medium',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
+
+        $this->actingAs($owner)->postJson('/api/v1/suppliers', [
+            'name' => 'Racing supplier',
+            'tax_id' => '19.870.554/0001-70',
+            'risk_level' => 'high',
+        ])->assertUnprocessable()->assertJsonValidationErrors('tax_id');
+
+        $this->assertDatabaseMissing('suppliers', ['tax_id' => '19.870.554/0001-70']);
+    }
+
     public function test_analyst_can_soft_delete_current_organization_supplier(): void
     {
         $organization = $this->organization('Northwind');
@@ -200,12 +273,16 @@ class SupplierApiTest extends TestCase
         return $user;
     }
 
-    private function supplier(Organization $organization, string $name): Supplier
+    private function supplier(Organization $organization, string $name, ?string $taxId = null): Supplier
     {
         app(CurrentOrganization::class)->set($organization);
 
         try {
-            return Supplier::query()->create(['name' => $name, 'risk_level' => 'medium']);
+            return Supplier::query()->create([
+                'name' => $name,
+                'tax_id' => $taxId,
+                'risk_level' => 'medium',
+            ]);
         } finally {
             app(CurrentOrganization::class)->clear();
         }

@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreRequirementSetRequest;
 use App\Models\Requirement;
 use App\Models\RequirementSet;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 
 class RequirementSetController extends Controller
 {
@@ -29,16 +31,20 @@ class RequirementSetController extends Controller
     {
         Gate::authorize('create', RequirementSet::class);
 
-        $set = DB::transaction(function () use ($request): RequirementSet {
-            $set = RequirementSet::query()->create([
-                'name' => $request->validated('name'),
-                'version' => 1,
-                'status' => 'draft',
-            ]);
-            $this->replaceRequirements($set, $request->validated('requirements'));
+        try {
+            $set = DB::transaction(function () use ($request): RequirementSet {
+                $set = RequirementSet::query()->create([
+                    'name' => $request->validated('name'),
+                    'version' => 1,
+                    'status' => 'draft',
+                ]);
+                $this->replaceRequirements($set, $request->validated('requirements'));
 
-            return $set;
-        });
+                return $set;
+            });
+        } catch (QueryException $exception) {
+            $this->throwNameConflict($exception);
+        }
 
         return response()->json(['data' => $this->data($set->load('requirements'))], 201);
     }
@@ -53,24 +59,28 @@ class RequirementSetController extends Controller
 
     public function update(StoreRequirementSetRequest $request, string $requirementSet): JsonResponse
     {
-        $set = DB::transaction(function () use ($request, $requirementSet): RequirementSet {
-            $set = $this->resolve($requirementSet, lock: true);
-            Gate::authorize('update', $set);
+        try {
+            $set = DB::transaction(function () use ($request, $requirementSet): RequirementSet {
+                $set = $this->resolve($requirementSet, lock: true);
+                Gate::authorize('update', $set);
 
-            if ($set->status !== 'draft') {
-                abort(409, 'Published requirement sets are immutable.');
-            }
+                if ($set->status !== 'draft') {
+                    abort(409, 'Published requirement sets are immutable.');
+                }
 
-            if ($request->has('name')) {
-                $set->update(['name' => $request->validated('name')]);
-            }
+                if ($request->has('name')) {
+                    $set->update(['name' => $request->validated('name')]);
+                }
 
-            if ($request->has('requirements')) {
-                $this->replaceRequirements($set, $request->validated('requirements'));
-            }
+                if ($request->has('requirements')) {
+                    $this->replaceRequirements($set, $request->validated('requirements'));
+                }
 
-            return $set;
-        });
+                return $set;
+            });
+        } catch (QueryException $exception) {
+            $this->throwNameConflict($exception);
+        }
 
         return response()->json(['data' => $this->data($set->load('requirements'))]);
     }
@@ -95,35 +105,45 @@ class RequirementSetController extends Controller
 
     public function createVersion(string $requirementSet): JsonResponse
     {
-        $clone = DB::transaction(function () use ($requirementSet): RequirementSet {
-            $source = $this->resolve($requirementSet, lock: true);
-            Gate::authorize('createVersion', $source);
+        try {
+            $clone = DB::transaction(function () use ($requirementSet): RequirementSet {
+                $source = $this->resolve($requirementSet, lock: true);
+                Gate::authorize('createVersion', $source);
 
-            if ($source->status !== 'published') {
-                abort(409, 'Only published requirement sets can be versioned.');
+                if ($source->status !== 'published') {
+                    abort(409, 'Only published requirement sets can be versioned.');
+                }
+
+                $root = $this->lineageRoot($source);
+                $version = $source->version + 1;
+                $exists = RequirementSet::query()
+                    ->withTrashed()
+                    ->forCurrentOrganization()
+                    ->where('parent_id', $root->id)
+                    ->where('version', $version)
+                    ->exists();
+                abort_if($exists, 409, 'The next requirement set version already exists.');
+
+                $clone = RequirementSet::query()->create([
+                    'parent_id' => $root->id,
+                    'name' => $source->name,
+                    'version' => $version,
+                    'status' => 'draft',
+                ]);
+
+                foreach ($source->requirements()->get() as $requirement) {
+                    $clone->requirements()->create($this->requirementAttributes($requirement));
+                }
+
+                return $clone;
+            });
+        } catch (QueryException $exception) {
+            if (! $this->isUniqueViolation($exception)) {
+                throw $exception;
             }
 
-            $version = $source->version + 1;
-            $exists = RequirementSet::query()
-                ->forCurrentOrganization()
-                ->where('name', $source->name)
-                ->where('version', $version)
-                ->exists();
-            abort_if($exists, 409, 'The next requirement set version already exists.');
-
-            $clone = RequirementSet::query()->create([
-                'parent_id' => $source->id,
-                'name' => $source->name,
-                'version' => $version,
-                'status' => 'draft',
-            ]);
-
-            foreach ($source->requirements()->get() as $requirement) {
-                $clone->requirements()->create($this->requirementAttributes($requirement));
-            }
-
-            return $clone;
-        });
+            abort(409, 'The next requirement set version already exists.');
+        }
 
         return response()->json(['data' => $this->data($clone->load('requirements'))], 201);
     }
@@ -149,6 +169,37 @@ class RequirementSetController extends Controller
         $query = RequirementSet::query()->wherePublicIdForCurrentOrganization($publicId);
 
         return ($lock ? $query->lockForUpdate() : $query)->firstOrFail();
+    }
+
+    private function lineageRoot(RequirementSet $set): RequirementSet
+    {
+        while ($set->parent_id !== null) {
+            $set = RequirementSet::query()
+                ->forCurrentOrganization()
+                ->whereKey($set->parent_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+        }
+
+        return $set;
+    }
+
+    private function isUniqueViolation(QueryException $exception): bool
+    {
+        $sqlState = (string) ($exception->errorInfo[0] ?? $exception->getCode());
+
+        return in_array($sqlState, ['23000', '23505'], true);
+    }
+
+    private function throwNameConflict(QueryException $exception): never
+    {
+        if (! $this->isUniqueViolation($exception)) {
+            throw $exception;
+        }
+
+        throw ValidationException::withMessages([
+            'name' => ['The name and version have already been taken in this organization.'],
+        ]);
     }
 
     /** @param list<array<string, mixed>> $requirements */

@@ -2,7 +2,10 @@
 
 namespace App\Http\Requests;
 
+use App\Models\RequirementSet;
+use App\Support\CurrentOrganization;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreRequirementSetRequest extends FormRequest
 {
@@ -17,9 +20,29 @@ class StoreRequirementSetRequest extends FormRequest
     public function rules(): array
     {
         $required = $this->isMethod('post') ? 'required' : 'sometimes';
+        $nameRules = [$required, 'string', 'max:255'];
+        $set = $this->isMethod('post')
+            ? null
+            : RequirementSet::query()
+                ->wherePublicIdForCurrentOrganization((string) $this->route('requirementSet'))
+                ->first();
+
+        if ($this->isMethod('post') || $set !== null) {
+            $version = $set?->version ?? 1;
+            $uniqueName = Rule::unique('requirement_sets', 'name')
+                ->where(fn ($query) => $query
+                    ->where('organization_id', app(CurrentOrganization::class)->id())
+                    ->where('version', $version));
+
+            if ($set !== null) {
+                $uniqueName->ignore($set->getKey());
+            }
+
+            $nameRules[] = $uniqueName;
+        }
 
         return [
-            'name' => [$required, 'string', 'max:255'],
+            'name' => $nameRules,
             'requirements' => [$required, 'array', 'min:1'],
             'requirements.*.code' => ['required', 'string', 'max:255', 'distinct'],
             'requirements.*.title' => ['required', 'string', 'max:255'],
