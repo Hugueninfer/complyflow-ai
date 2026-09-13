@@ -1,0 +1,150 @@
+name: ${COMPOSE_PROJECT_NAME:-complyflow}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-complyflow}
+      POSTGRES_USER: ${POSTGRES_USER:-complyflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-complyflow}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" &&
+          psql -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+          -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api/Dockerfile
+    working_dir: /workspace/apps/api
+    command: php artisan serve --host=0.0.0.0 --port=8000
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:${API_PORT:-8000}
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${POSTGRES_DB:-complyflow}
+      DB_USERNAME: ${POSTGRES_USER:-complyflow}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-complyflow}
+      QUEUE_CONNECTION: database
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - .:/workspace
+      - api_vendor:/workspace/apps/api/vendor
+    networks:
+      - internal
+      - edge
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  queue:
+    build:
+      context: .
+      dockerfile: infra/docker/api/Dockerfile
+    working_dir: /workspace/apps/api
+    command: >-
+      sh -lc "php artisan migrate --force &&
+      exec php artisan queue:work --sleep=3 --tries=3 --timeout=90"
+    environment:
+      APP_ENV: local
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${POSTGRES_DB:-complyflow}
+      DB_USERNAME: ${POSTGRES_USER:-complyflow}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-complyflow}
+      QUEUE_CONNECTION: database
+    volumes:
+      - .:/workspace
+      - api_vendor:/workspace/apps/api/vendor
+    networks:
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'artisan queue:work' >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  processor:
+    build:
+      context: .
+      dockerfile: infra/docker/processor/Dockerfile
+    working_dir: /workspace/services/processor
+    command: uvicorn app.main:app --host=0.0.0.0 --port=8001 --reload
+    ports:
+      - "${PROCESSOR_PORT:-8001}:8001"
+    volumes:
+      - .:/workspace
+    networks:
+      - internal
+      - edge
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/web/Dockerfile
+    working_dir: /workspace/apps/web
+    command: npm run dev -- --host 0.0.0.0
+    ports:
+      - "${WEB_PORT:-5173}:5173"
+    volumes:
+      - .:/workspace
+      - web_node_modules:/workspace/apps/web/node_modules
+    networks:
+      - internal
+      - edge
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:5173').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  postgres_data:
+  api_vendor:
+  web_node_modules:
+
+networks:
+  internal:
+    internal: true
+  edge:
