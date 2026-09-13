@@ -24,4 +24,6 @@ RUN composer install --no-interaction --prefer-dist --no-progress --no-scripts
 COPY infra/docker/api/entrypoint.sh /usr/local/bin/complyflow-api-entrypoint
 RUN chmod +x /usr/local/bin/complyflow-api-entrypoint
 
+COPY infra/docker/api/uploads.ini /usr/local/etc/php/conf.d/uploads.ini
+
 ENTRYPOINT ["complyflow-api-entrypoint"]

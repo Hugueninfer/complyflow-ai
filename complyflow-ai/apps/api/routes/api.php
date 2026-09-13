@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DemoSessionController;
+use App\Http\Controllers\Api\V1\DocumentController;
 use App\Http\Controllers\Api\V1\RequirementSetController;
 use App\Http\Controllers\Api\V1\SupplierController;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,8 @@ Route::middleware('web')->prefix('v1')->group(function (): void {
         Route::put('/suppliers/{supplier}', [SupplierController::class, 'update']);
         Route::patch('/suppliers/{supplier}', [SupplierController::class, 'update']);
         Route::delete('/suppliers/{supplier}', [SupplierController::class, 'destroy']);
+        Route::post('/suppliers/{supplier}/documents', [DocumentController::class, 'store']);
+        Route::get('/documents/{document}', [DocumentController::class, 'show']);
 
         Route::get('/requirement-sets', [RequirementSetController::class, 'index']);
         Route::post('/requirement-sets', [RequirementSetController::class, 'store']);
