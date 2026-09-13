@@ -9,7 +9,6 @@ use App\Models\Requirement;
 use App\Services\Processor\ProcessorException;
 use App\Services\Processor\ResultPersister;
 use Illuminate\Queue\MaxAttemptsExceededException;
-use Illuminate\Queue\Worker;
 use Illuminate\Queue\WorkerOptions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -153,14 +152,14 @@ class WorkerAnalysisTest extends AnalysisTestCase
         $this->assertDatabaseCount('analysis_findings', 1);
     }
 
-    public function test_preflight_exhaustion_finalizes_interrupted_owner_after_its_lock_has_expired(): void
+    public function test_legacy_run_without_reservation_identity_is_not_finalized_by_preflight(): void
     {
         $run = $this->queuedRun();
         $queue = Queue::connection('database');
         $queue->push(new ProcessAnalysis($run->id));
         $interrupted = $queue->pop();
-        // State left by a process killed during its fourth reservation. The
-        // reservation and overlap lease have expired before the next worker pops.
+        // Legacy state has no reservation identity: neither UUID nor an unlocked
+        // lease authorizes this callback to infer ownership.
         $run->update(['status' => 'processing', 'attempts' => 4, 'started_at' => now()->subSeconds(100),
             'owner_message_uuid' => $interrupted->uuid(), 'owner_reservation_attempt' => 4]);
         DB::table('jobs')->where('id', $interrupted->getJobId())->update(['attempts' => 4, 'reserved_at' => now()->subSeconds(100)->timestamp]);
@@ -171,9 +170,61 @@ class WorkerAnalysisTest extends AnalysisTestCase
         } catch (MaxAttemptsExceededException) {
         }
         $this->assertTrue($exhausted->hasFailed());
-        $this->assertSame('failed', $run->fresh()->status);
-        $this->assertNotNull($run->fresh()->completed_at);
+        $this->assertSame('processing', $run->fresh()->status);
+        $this->assertNull($run->fresh()->completed_at);
         Http::assertNothingSent();
+    }
+
+    public function test_exhausted_duplicate_during_backoff_preserves_the_owners_scheduled_retry(): void
+    {
+        $this->travelTo(now()->startOfSecond());
+        $run = $this->queuedRun();
+        $queue = Queue::connection('database');
+        $queue->push(new ProcessAnalysis($run->id), '', 'owner');
+        $owner = $queue->pop('owner');
+        $queue->pushRaw($owner->getRawBody(), 'contender');
+        $calls = 0;
+        Http::fake(function () use ($queue, $run, &$calls) {
+            if (++$calls > 1) {
+                return $this->response($run);
+            }
+            for ($attempt = 1; $attempt <= 4; $attempt++) {
+                $contender = $queue->pop('contender');
+                $this->assertSame($attempt, $contender->attempts());
+                app('queue.worker')->process('database', $contender, new WorkerOptions(maxTries: 4));
+                $this->assertTrue($contender->isReleased());
+                $this->travel($attempt === 4 ? 5 : 10)->seconds();
+            }
+
+            return Http::response([], 503); // t35: owner releases until t45.
+        });
+        try {
+            app('queue.worker')->process('database', $owner, new WorkerOptions(maxTries: 4));
+        } catch (ProcessorException) {
+        }
+        $this->assertTrue($owner->isReleased());
+        $this->assertSame('pending', $run->fresh()->status);
+        $this->travel(5)->seconds(); // t40: no lock, but a valid retry is pending.
+        $contender = $queue->pop('contender');
+        $this->assertSame(5, $contender->attempts());
+        $this->assertNotSame($owner->getJobId(), $contender->getJobId());
+        try {
+            app('queue.worker')->process('database', $contender, new WorkerOptions(maxTries: 4));
+        } catch (MaxAttemptsExceededException) {
+        }
+        $this->assertTrue($contender->hasFailed());
+        $this->assertSame('pending', $run->fresh()->status);
+        $this->assertNull($run->fresh()->completed_at);
+        $owner->fail(new RuntimeException('Late callback after this reservation was released.'));
+        $this->assertSame('pending', $run->fresh()->status);
+        $this->assertNull($queue->pop('owner'));
+        $this->travel(5)->seconds();
+        $retry = $queue->pop('owner');
+        $this->assertSame(2, $retry->attempts());
+        app('queue.worker')->process('database', $retry, new WorkerOptions(maxTries: 4));
+        $this->assertSame('completed', $run->fresh()->status);
+        $this->assertDatabaseCount('analysis_findings', 1);
+        Http::assertSentCount(2);
     }
 
     public function test_identical_payload_in_different_database_reservation_cannot_fail_owner(): void

@@ -9,6 +9,7 @@ use App\Services\Processor\ResultPersister;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\Jobs\DatabaseJob;
 use Illuminate\Queue\MaxAttemptsExceededException;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Cache;
@@ -86,24 +87,25 @@ class ProcessAnalysis implements ShouldQueue
     {
         // Laravel reconstructs this command from the queued payload. Correlate
         // using the actual Job metadata, not state assigned only during handle().
-        if (! $this->job?->uuid()) {
+        if (! $this->job?->uuid() || $this->job->isReleased()) {
             return;
         }
         $query = AnalysisRun::whereKey($this->analysisRunId)->whereNotIn('status', ['completed', 'failed'])
-            ->where('owner_message_uuid', $this->job->uuid());
+            ->where('owner_message_uuid', $this->job->uuid())
+            ->where('owner_reservation_id', (string) $this->job->getJobId());
         $failure = [
             'status' => 'failed', 'error_code' => 'analysis_failed', 'error_message' => 'Não foi possível processar a análise.', 'completed_at' => now(),
         ];
-        $updated = (clone $query)->where('owner_reservation_id', (string) $this->job->getJobId())
-            ->where('owner_reservation_attempt', $this->job->attempts())->update($failure);
-        if (! $updated && $error instanceof MaxAttemptsExceededException) {
-            // Recover a killed final reservation only once its overlap lease has
-            // expired. Releases by a contender must not terminate an active owner,
-            // even if an identical queue payload was delivered a second time.
+        $updated = (clone $query)->where('owner_reservation_attempt', $this->job->attempts())->update($failure);
+        if (! $updated && $error instanceof MaxAttemptsExceededException && $this->job instanceof DatabaseJob) {
+            // DatabaseQueue re-reserves an expired row with the SAME ID, whereas
+            // release/backoff creates a NEW row. Only that interrupted reservation
+            // may be recovered; a free lock alone does not prove a crash.
             $lock = Cache::lock($this->middleware()[0]->getLockKey($this), 85);
             if ($lock->get()) {
                 try {
-                    $query->where('owner_reservation_attempt', '<', $this->job->attempts())->update($failure);
+                    $query->where('status', 'processing')
+                        ->where('owner_reservation_attempt', $this->job->attempts() - 1)->update($failure);
                 } finally {
                     $lock->release();
                 }

@@ -37,11 +37,21 @@ exceções com conteúdo de documentos não são propagadas ao erro público.
 Cada tentativa registra o UUID da mensagem, o ID da reserva na fila database
 e seu número de tentativa. O callback `failed()` só finaliza a reserva
 proprietária: duplicatas que esgotem tentativas em releases por sobreposição
-não finalizam uma execução alheia. Se um processo for morto durante a última
-reserva, o worker seguinte pode finalizar a mesma mensagem no preflight de
-esgotamento somente depois de adquirir o lock de sobreposição já expirado.
+não finalizam uma execução alheia, inclusive quando o proprietário está em
+`pending` durante backoff e o lock está livre. Se um processo for morto durante
+a última reserva, a recuperação no preflight exige uma `DatabaseJob` com o
+mesmo UUID e ID da linha reservada, estado `processing`, tentativa imediatamente
+anterior e aquisição do lock de sobreposição. A fila database mantém o ID ao
+retomar uma reserva expirada, mas cria outro ID em releases/backoff. Lock livre
+isoladamente não comprova interrupção nem autoriza finalizar outro job.
 A resposta HTTP passa por nova checagem de propriedade/estado sob lock de
 linha antes da transação de persistência, impedindo `failed` → `completed`.
+
+Payloads serializados antigos continuam executáveis: a propriedade é obtida
+da reserva real durante `handle()`, sem depender de novos campos serializados.
+Registros legados interrompidos sem identidade de reserva permanecem sem
+conclusão automática (fail-closed); exigem reconciliação operacional. A
+recuperação de crash não infere identidade para outros drivers de fila.
 
 ## Fronteira da Task 10
 
