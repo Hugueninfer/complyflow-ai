@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AnalysisController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DemoSessionController;
 use App\Http\Controllers\Api\V1\DocumentController;
@@ -29,6 +30,8 @@ Route::middleware('web')->prefix('v1')->group(function (): void {
         Route::delete('/suppliers/{supplier}', [SupplierController::class, 'destroy']);
         Route::post('/suppliers/{supplier}/documents', [DocumentController::class, 'store']);
         Route::get('/documents/{document}', [DocumentController::class, 'show']);
+        Route::post('/suppliers/{supplier}/analyses', [AnalysisController::class, 'store'])->middleware('throttle:30,1');
+        Route::get('/analyses/{analysis}', [AnalysisController::class, 'show']);
 
         Route::get('/requirement-sets', [RequirementSetController::class, 'index']);
         Route::post('/requirement-sets', [RequirementSetController::class, 'store']);

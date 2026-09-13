@@ -1,6 +1,10 @@
 <?php
 
 return [
+    'processor' => [
+        'url' => env('PROCESSOR_URL', 'http://processor:8001'),
+        'secret' => env('PROCESSOR_HMAC_SECRET'),
+    ],
 
     /*
     |--------------------------------------------------------------------------

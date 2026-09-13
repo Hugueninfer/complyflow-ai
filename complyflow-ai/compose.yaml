@@ -33,6 +33,8 @@ services:
       APP_ENV: local
       APP_DEBUG: "true"
       APP_URL: http://localhost:${API_PORT:-8000}
+      PROCESSOR_URL: http://processor:8001
+      PROCESSOR_HMAC_SECRET: ${PROCESSOR_HMAC_SECRET:-}
       DB_CONNECTION: pgsql
       DB_HOST: postgres
       DB_PORT: 5432
@@ -68,6 +70,8 @@ services:
       exec php artisan queue:work --sleep=3 --tries=3 --timeout=90"
     environment:
       APP_ENV: local
+      PROCESSOR_URL: http://processor:8001
+      PROCESSOR_HMAC_SECRET: ${PROCESSOR_HMAC_SECRET:-}
       DB_CONNECTION: pgsql
       DB_HOST: postgres
       DB_PORT: 5432
@@ -97,6 +101,8 @@ services:
       context: .
       dockerfile: infra/docker/processor/Dockerfile
     working_dir: /workspace/services/processor
+    environment:
+      PROCESSOR_HMAC_SECRET: ${PROCESSOR_HMAC_SECRET:-}
     command: uvicorn app.main:app --host=0.0.0.0 --port=8001 --reload
     ports:
       - "${PROCESSOR_PORT:-8001}:8001"
