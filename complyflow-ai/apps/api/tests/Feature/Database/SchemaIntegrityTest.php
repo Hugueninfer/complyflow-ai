@@ -1,0 +1,93 @@
+<?php
+
+namespace Tests\Feature\Database;
+
+use Illuminate\Database\QueryException;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Tests\TestCase;
+
+class SchemaIntegrityTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_analysis_finding_rejects_confidence_outside_zero_to_one(): void
+    {
+        [$organizationId, $analysisRunId, $requirementId] = $this->findingDependencies();
+
+        $this->expectException(QueryException::class);
+
+        DB::table('analysis_findings')->insert([
+            'public_id' => (string) Str::uuid(),
+            'organization_id' => $organizationId,
+            'analysis_run_id' => $analysisRunId,
+            'requirement_id' => $requirementId,
+            'status' => 'met',
+            'justification' => 'Invalid confidence must be rejected by the database.',
+            'confidence' => 1.1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    /**
+     * @return array{int, int, int}
+     */
+    private function findingDependencies(): array
+    {
+        $organizationId = DB::table('organizations')->insertGetId([
+            'public_id' => (string) Str::uuid(),
+            'name' => 'Northwind',
+            'slug' => 'northwind-'.Str::lower(Str::random(6)),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $supplierId = DB::table('suppliers')->insertGetId([
+            'public_id' => (string) Str::uuid(),
+            'organization_id' => $organizationId,
+            'name' => 'Northwind Security',
+            'risk_level' => 'medium',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $requirementSetId = DB::table('requirement_sets')->insertGetId([
+            'public_id' => (string) Str::uuid(),
+            'organization_id' => $organizationId,
+            'name' => 'Baseline',
+            'version' => 1,
+            'status' => 'published',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $requirementId = DB::table('requirements')->insertGetId([
+            'public_id' => (string) Str::uuid(),
+            'organization_id' => $organizationId,
+            'requirement_set_id' => $requirementSetId,
+            'code' => 'SEC-001',
+            'title' => 'Security policy',
+            'category' => 'security',
+            'weight' => 1,
+            'position' => 1,
+            'evaluation_text' => 'A current security policy must exist.',
+            'is_required' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $analysisRunId = DB::table('analysis_runs')->insertGetId([
+            'public_id' => (string) Str::uuid(),
+            'organization_id' => $organizationId,
+            'supplier_id' => $supplierId,
+            'requirement_set_id' => $requirementSetId,
+            'status' => 'completed',
+            'attempts' => 1,
+            'idempotency_key' => (string) Str::uuid(),
+            'document_set_hash' => str_repeat('a', 64),
+            'progress' => 100,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return [$organizationId, $analysisRunId, $requirementId];
+    }
+}
