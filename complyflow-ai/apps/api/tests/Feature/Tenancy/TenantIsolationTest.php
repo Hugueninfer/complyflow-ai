@@ -4,10 +4,10 @@ namespace Tests\Feature\Tenancy;
 
 use App\Models\Organization;
 use App\Models\Role;
+use App\Models\Supplier;
 use App\Models\User;
 use App\Support\CurrentOrganization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -22,9 +22,8 @@ class TenantIsolationTest extends TestCase
 
         Route::middleware(['auth', 'organization'])
             ->get('/api/v1/suppliers/{supplier}', function (string $supplier) {
-                $record = DB::table('suppliers')
-                    ->where('organization_id', app(CurrentOrganization::class)->id())
-                    ->where('public_id', $supplier)
+                $record = Supplier::query()
+                    ->wherePublicIdForCurrentOrganization($supplier)
                     ->firstOrFail();
 
                 return response()->json(['data' => ['id' => $record->public_id]]);
@@ -37,6 +36,13 @@ class TenantIsolationTest extends TestCase
         [$organizationB] = $this->organizationWithOwner('Contoso');
         $supplierOfB = $this->createSupplier($organizationB->id, 'Contoso Security');
 
+        $this->assertNull(
+            Supplier::query()
+                ->forOrganization($organizationA)
+                ->where('public_id', $supplierOfB)
+                ->first(),
+        );
+
         $this->actingAs($ownerA)
             ->getJson('/api/v1/suppliers/'.$supplierOfB)
             ->assertNotFound();
@@ -48,6 +54,14 @@ class TenantIsolationTest extends TestCase
     {
         [$organization, $owner] = $this->organizationWithOwner('Northwind');
         $supplier = $this->createSupplier($organization->id, 'Northwind Security');
+
+        app(CurrentOrganization::class)->set($organization);
+        $resolved = Supplier::query()
+            ->wherePublicIdForCurrentOrganization($supplier)
+            ->firstOrFail();
+        app(CurrentOrganization::class)->clear();
+
+        $this->assertSame($supplier, $resolved->public_id);
 
         $this->actingAs($owner)
             ->getJson('/api/v1/suppliers/'.$supplier)
@@ -74,17 +88,16 @@ class TenantIsolationTest extends TestCase
 
     private function createSupplier(int $organizationId, string $name): string
     {
-        $publicId = (string) Str::uuid();
+        $currentOrganization = app(CurrentOrganization::class);
+        $currentOrganization->set($organizationId);
 
-        DB::table('suppliers')->insert([
-            'organization_id' => $organizationId,
-            'public_id' => $publicId,
-            'name' => $name,
-            'risk_level' => 'medium',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        return $publicId;
+        try {
+            return Supplier::query()->create([
+                'name' => $name,
+                'risk_level' => 'medium',
+            ])->public_id;
+        } finally {
+            $currentOrganization->clear();
+        }
     }
 }

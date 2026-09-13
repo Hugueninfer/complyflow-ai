@@ -25,7 +25,7 @@ return new class extends Migration
             $table->timestampsTz();
             $table->softDeletesTz();
             $table->index(['organization_id', 'supplier_id']);
-            $table->unique(['organization_id', 'sha256']);
+            $table->unique(['organization_id', 'supplier_id', 'sha256']);
         });
 
         Schema::create('document_blobs', function (Blueprint $table) {

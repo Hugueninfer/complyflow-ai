@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Database;
 
+use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +12,16 @@ use Tests\TestCase;
 class SchemaIntegrityTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_user_receives_unique_public_uuid_while_preserving_internal_key(): void
+    {
+        $firstUser = User::factory()->create();
+        $secondUser = User::factory()->create();
+
+        $this->assertIsInt($firstUser->id);
+        $this->assertTrue(Str::isUuid($firstUser->public_id));
+        $this->assertNotSame($firstUser->public_id, $secondUser->public_id);
+    }
 
     public function test_analysis_finding_rejects_confidence_outside_zero_to_one(): void
     {
@@ -31,26 +42,29 @@ class SchemaIntegrityTest extends TestCase
         ]);
     }
 
+    public function test_document_hash_is_deduplicated_per_supplier_within_tenant(): void
+    {
+        $organizationId = $this->createOrganization();
+        $firstSupplierId = $this->createSupplier($organizationId, 'Northwind Security');
+        $secondSupplierId = $this->createSupplier($organizationId, 'Contoso Security');
+        $sha256 = str_repeat('b', 64);
+
+        $this->insertDocument($organizationId, $firstSupplierId, $sha256);
+        $this->insertDocument($organizationId, $secondSupplierId, $sha256);
+
+        $this->assertSame(2, DB::table('documents')->where('sha256', $sha256)->count());
+
+        $this->expectException(QueryException::class);
+        $this->insertDocument($organizationId, $firstSupplierId, $sha256);
+    }
+
     /**
      * @return array{int, int, int}
      */
     private function findingDependencies(): array
     {
-        $organizationId = DB::table('organizations')->insertGetId([
-            'public_id' => (string) Str::uuid(),
-            'name' => 'Northwind',
-            'slug' => 'northwind-'.Str::lower(Str::random(6)),
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        $supplierId = DB::table('suppliers')->insertGetId([
-            'public_id' => (string) Str::uuid(),
-            'organization_id' => $organizationId,
-            'name' => 'Northwind Security',
-            'risk_level' => 'medium',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $organizationId = $this->createOrganization();
+        $supplierId = $this->createSupplier($organizationId, 'Northwind Security');
         $requirementSetId = DB::table('requirement_sets')->insertGetId([
             'public_id' => (string) Str::uuid(),
             'organization_id' => $organizationId,
@@ -60,6 +74,7 @@ class SchemaIntegrityTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
         $requirementId = DB::table('requirements')->insertGetId([
             'public_id' => (string) Str::uuid(),
             'organization_id' => $organizationId,
@@ -74,6 +89,7 @@ class SchemaIntegrityTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
         $analysisRunId = DB::table('analysis_runs')->insertGetId([
             'public_id' => (string) Str::uuid(),
             'organization_id' => $organizationId,
@@ -89,5 +105,45 @@ class SchemaIntegrityTest extends TestCase
         ]);
 
         return [$organizationId, $analysisRunId, $requirementId];
+    }
+
+    private function createOrganization(): int
+    {
+        return DB::table('organizations')->insertGetId([
+            'public_id' => (string) Str::uuid(),
+            'name' => 'Northwind',
+            'slug' => 'northwind-'.Str::lower(Str::random(6)),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function createSupplier(int $organizationId, string $name): int
+    {
+        return DB::table('suppliers')->insertGetId([
+            'public_id' => (string) Str::uuid(),
+            'organization_id' => $organizationId,
+            'name' => $name,
+            'risk_level' => 'medium',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function insertDocument(int $organizationId, int $supplierId, string $sha256): void
+    {
+        DB::table('documents')->insert([
+            'public_id' => (string) Str::uuid(),
+            'organization_id' => $organizationId,
+            'supplier_id' => $supplierId,
+            'original_name' => 'policy.pdf',
+            'storage_name' => (string) Str::uuid().'.pdf',
+            'mime_type' => 'application/pdf',
+            'size_bytes' => 1024,
+            'sha256' => $sha256,
+            'status' => 'uploaded',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 }
