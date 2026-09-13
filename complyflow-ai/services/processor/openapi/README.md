@@ -23,13 +23,15 @@ the digest as lowercase hex. Join these three strings with a single LF:
 There is **no final LF** on that joined message. HMAC-SHA256 it using the
 UTF-8 secret, encode as lowercase hex, and send as `X-CF-Signature`.
 Do not sign a decoded/Pydantic-reserialized request. Headers must appear
-exactly once. Client clock skew must be within 60 seconds, inclusive.
+exactly once. Client clock skew must be within 60 seconds, inclusive;
+the server's clock retains subsecond precision for this comparison.
 
 Nonces are claimed atomically after signature verification and before
 JSON/schema validation. Every retry needs a new nonce, including retries
 after 422 or pipeline errors; reuse the request's business idempotency key.
 The process-local cache retains each accepted nonce for 120 seconds using
-monotonic time, cleans expired entries on access, and holds at most 10,000
+monotonic time, including the exact 120-second endpoint, cleans entries
+strictly after that endpoint on access, and holds at most 10,000
 entries. At capacity it returns 503 without evicting live entries. Run a
 single processor worker; multiple workers/replicas require a shared atomic
 nonce store. Restarting the process clears this cache.

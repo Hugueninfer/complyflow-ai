@@ -28,7 +28,9 @@ class NonceCache:
         with self._lock:
             # Read monotonic time inside the lock to preserve expiry order.
             now = monotonic() if now is None else now
-            while self._entries and next(iter(self._entries.values())) <= now:
+            # Both edges of the signature's 60-second window are accepted.
+            # Keep the nonce through the exact 120-second endpoint as well.
+            while self._entries and next(iter(self._entries.values())) < now:
                 self._entries.popitem(last=False)
             if nonce in self._entries:
                 return "replay"
@@ -51,7 +53,7 @@ async def verify_signed_request(request: Request) -> None:
         not re.fullmatch(r"[0-9]{1,12}", timestamp)
         or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", nonce)
         or not re.fullmatch(r"[0-9a-f]{64}", signature)
-        or abs(int(wall_clock()) - int(timestamp)) > 60
+        or abs(wall_clock() - int(timestamp)) > 60
     ):
         raise HTTPException(401, detail="invalid_authentication")
 

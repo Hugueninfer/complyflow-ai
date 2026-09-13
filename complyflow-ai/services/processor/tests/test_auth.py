@@ -90,13 +90,46 @@ def test_clock_window_has_inclusive_sixty_second_boundary(client, monkeypatch, o
     assert client.post("/v1/analyze", content=b"{}", headers=headers).status_code == expected
 
 
+@pytest.mark.parametrize("elapsed", [119.5, 120.0, 120.5])
+def test_replay_from_earliest_valid_instant_is_rejected_at_expiry_boundary(client, monkeypatch, elapsed):
+    from app.security import hmac_auth
+
+    timestamp = 1_800_000_000
+    clock = {"wall": timestamp - 60.0, "monotonic": 100.0}
+    monkeypatch.setattr(hmac_auth, "wall_clock", lambda: clock["wall"])
+    monkeypatch.setattr(hmac_auth, "monotonic", lambda: clock["monotonic"])
+    monkeypatch.setattr(hmac_auth, "nonce_cache", hmac_auth.NonceCache())
+    headers = signed_headers(b"{}", timestamp=timestamp)
+    # 422 confirms authentication succeeded at the first acceptable instant.
+    assert client.post("/v1/analyze", content=b"{}", headers=headers).status_code == 422
+
+    clock.update(wall=timestamp - 60.0 + elapsed, monotonic=100.0 + elapsed)
+    replay = client.post("/v1/analyze", content=b"{}", headers=headers)
+    assert replay.status_code == 401
+    assert replay.json() == {"detail": "invalid_authentication"}
+
+
+@pytest.mark.parametrize("offset,expected", [
+    (-60.5, 401), (-60.0, 422), (-59.5, 422),
+    (59.5, 422), (60.0, 422), (60.5, 401),
+])
+def test_clock_window_preserves_subsecond_precision(client, monkeypatch, offset, expected):
+    from app.security import hmac_auth
+
+    timestamp = 1_800_000_000
+    monkeypatch.setattr(hmac_auth, "wall_clock", lambda: timestamp + offset)
+    headers = signed_headers(b"{}", timestamp=timestamp)
+    assert client.post("/v1/analyze", content=b"{}", headers=headers).status_code == expected
+
+
 def test_nonce_is_retained_for_120_seconds_then_cleaned():
     from app.security.hmac_auth import NonceCache
 
     cache = NonceCache(capacity=2)
     assert cache.claim("one", now=100) == "accepted"
     assert cache.claim("one", now=219.99) == "replay"
-    assert cache.claim("one", now=220) == "accepted"
+    assert cache.claim("one", now=220) == "replay"
+    assert cache.claim("one", now=220.001) == "accepted"
 
 
 def test_full_cache_fails_closed_without_evicting_live_nonce():
@@ -107,8 +140,9 @@ def test_full_cache_fails_closed_without_evicting_live_nonce():
     assert cache.claim("two", now=101) == "accepted"
     assert cache.claim("three", now=102) == "full"
     assert cache.claim("one", now=103) == "replay"
-    assert cache.claim("three", now=220) == "accepted"
-    assert cache.claim("two", now=220) == "replay"
+    assert cache.claim("three", now=220) == "full"
+    assert cache.claim("three", now=220.001) == "accepted"
+    assert cache.claim("two", now=220.001) == "replay"
 
 
 def test_concurrent_nonce_claim_is_atomic():
