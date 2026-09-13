@@ -106,6 +106,40 @@ class RequirementSetApiTest extends TestCase
         ]);
     }
 
+    public function test_published_immutability_precedes_unique_payload_validation(): void
+    {
+        $organization = $this->organization('Northwind');
+        $owner = $this->userWithRole($organization, 'owner');
+        $publishedId = $this->createSet($owner, 'Published Controls');
+        $this->createSet($owner, 'Conflicting Controls');
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$publishedId.'/publish')->assertOk();
+
+        $this->actingAs($owner)->putJson('/api/v1/requirement-sets/'.$publishedId, [
+            'name' => 'Conflicting Controls',
+        ])->assertStatus(409)
+            ->assertJsonPath('message', 'Published requirement sets are immutable.');
+    }
+
+    public function test_update_precedence_preserves_forbidden_and_foreign_not_found_responses(): void
+    {
+        $organization = $this->organization('Northwind');
+        $otherOrganization = $this->organization('Globex');
+        $owner = $this->userWithRole($organization, 'owner');
+        $reviewer = $this->userWithRole($organization, 'reviewer');
+        $foreignOwner = $this->userWithRole($otherOrganization, 'owner');
+        $publishedId = $this->createSet($owner, 'Published Controls');
+        $this->createSet($owner, 'Conflicting Controls');
+        $foreignId = $this->createSet($foreignOwner, 'Foreign Controls');
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$publishedId.'/publish')->assertOk();
+
+        $this->actingAs($reviewer)->putJson('/api/v1/requirement-sets/'.$publishedId, [
+            'name' => 'Conflicting Controls',
+        ])->assertForbidden();
+        $this->actingAs($owner)->putJson('/api/v1/requirement-sets/'.$foreignId, [
+            'name' => 'Conflicting Controls',
+        ])->assertNotFound();
+    }
+
     public function test_analyst_can_edit_a_draft_and_replace_its_requirements(): void
     {
         $organization = $this->organization('Northwind');

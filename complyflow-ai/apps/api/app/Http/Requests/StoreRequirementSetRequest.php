@@ -9,11 +9,25 @@ use Illuminate\Validation\Rule;
 
 class StoreRequirementSetRequest extends FormRequest
 {
+    private ?RequirementSet $targetSet = null;
+
     public function authorize(): bool
     {
-        $permission = $this->isMethod('post') ? 'requirement.create' : 'requirement.update';
+        if ($this->isMethod('post')) {
+            return $this->user()?->hasPermission('requirement.create') ?? false;
+        }
 
-        return $this->user()?->hasPermission($permission) ?? false;
+        $set = $this->targetSet();
+
+        if (! ($this->user()?->hasPermission('requirement.update') ?? false)) {
+            return false;
+        }
+
+        if ($set->status !== 'draft') {
+            abort(409, 'Published requirement sets are immutable.');
+        }
+
+        return true;
     }
 
     /** @return array<string, mixed> */
@@ -21,11 +35,7 @@ class StoreRequirementSetRequest extends FormRequest
     {
         $required = $this->isMethod('post') ? 'required' : 'sometimes';
         $nameRules = [$required, 'string', 'max:255'];
-        $set = $this->isMethod('post')
-            ? null
-            : RequirementSet::query()
-                ->wherePublicIdForCurrentOrganization((string) $this->route('requirementSet'))
-                ->first();
+        $set = $this->isMethod('post') ? null : $this->targetSet();
 
         if ($this->isMethod('post') || $set !== null) {
             $version = $set?->version ?? 1;
@@ -52,5 +62,12 @@ class StoreRequirementSetRequest extends FormRequest
             'requirements.*.evaluation_text' => ['required', 'string'],
             'requirements.*.is_required' => ['sometimes', 'boolean'],
         ];
+    }
+
+    private function targetSet(): RequirementSet
+    {
+        return $this->targetSet ??= RequirementSet::query()
+            ->wherePublicIdForCurrentOrganization((string) $this->route('requirementSet'))
+            ->firstOrFail();
     }
 }
