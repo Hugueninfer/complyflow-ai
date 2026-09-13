@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 
-app = FastAPI()
+from app.api.analyze import router as analyze_router
+
+app = FastAPI(title="ComplyFlow Processor", version="0.1.0")
+app.include_router(analyze_router)
 
 
 @app.get("/health")

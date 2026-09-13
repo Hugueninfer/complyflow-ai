@@ -1,0 +1,11 @@
+{
+  "description": "TEST ONLY. Generated independently with Node crypto. UTF-8 body includes spaces, accents and a trailing LF. The signed message has no trailing LF.",
+  "timestamp": "1800000000",
+  "nonce": "contract-vector-0001",
+  "test_secret": "processor-contract-test-secret-not-for-production",
+  "body_utf8": "{\n  \"analysis_id\": \"10000000-0000-4000-8000-000000000001\",\n  \"idempotency_key\": \"analysis-vector-1\",\n  \"requirements\": [\n    {\n      \"requirement_id\": \"20000000-0000-4000-8000-000000000001\",\n      \"criterion\": \"Certidão válida\",\n      \"category\": \"Compliance\",\n      \"weight\": 1,\n      \"evaluation_text\": \"Confirmar evidência.\"\n    }\n  ],\n  \"documents\": [\n    {\n      \"document_id\": \"30000000-0000-4000-8000-000000000001\",\n      \"sha256\": \"e5c62df5dab5c87b6a015ef3d43597074d1eec433b15f51aec63b8582d0e4ab4\",\n      \"content_base64\": \"JVBERi0xLjQK\"\n    }\n  ]\n}\n",
+  "body_base64": "ewogICJhbmFseXNpc19pZCI6ICIxMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLAogICJpZGVtcG90ZW5jeV9rZXkiOiAiYW5hbHlzaXMtdmVjdG9yLTEiLAogICJyZXF1aXJlbWVudHMiOiBbCiAgICB7CiAgICAgICJyZXF1aXJlbWVudF9pZCI6ICIyMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLAogICAgICAiY3JpdGVyaW9uIjogIkNlcnRpZMOjbyB2w6FsaWRhIiwKICAgICAgImNhdGVnb3J5IjogIkNvbXBsaWFuY2UiLAogICAgICAid2VpZ2h0IjogMSwKICAgICAgImV2YWx1YXRpb25fdGV4dCI6ICJDb25maXJtYXIgZXZpZMOqbmNpYS4iCiAgICB9CiAgXSwKICAiZG9jdW1lbnRzIjogWwogICAgewogICAgICAiZG9jdW1lbnRfaWQiOiAiMzAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwKICAgICAgInNoYTI1NiI6ICJlNWM2MmRmNWRhYjVjODdiNmEwMTVlZjNkNDM1OTcwNzRkMWVlYzQzM2IxNWY1MWFlYzYzYjg1ODJkMGU0YWI0IiwKICAgICAgImNvbnRlbnRfYmFzZTY0IjogIkpWQkVSaTB4TGpRSyIKICAgIH0KICBdCn0K",
+  "body_sha256": "82bf56216ce63b0b4c96d01197a891f48d16c9a70e4aa4bddf475a612f74f79c",
+  "signed_message": "1800000000\ncontract-vector-0001\n82bf56216ce63b0b4c96d01197a891f48d16c9a70e4aa4bddf475a612f74f79c",
+  "expected_signature": "c6e33a2cd1a0bd520e994c30495350f6c7f5a8d8c11800e84733dfe736085971"
+}
