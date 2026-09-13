@@ -53,7 +53,7 @@ Registros legados interrompidos sem identidade de reserva permanecem sem
 conclusão automática (fail-closed); exigem reconciliação operacional. A
 recuperação de crash não infere identidade para outros drivers de fila.
 
-## Fronteira da Task 10
+## Persistência de resultados e matriz
 
 `ProcessorClient::analyze(AnalysisRun): ProcessorResult` verifica tipos estritos,
 objetos fechados, listas JSON, enums, revisão humana obrigatória, IDs exatos,
@@ -61,20 +61,41 @@ páginas, chunks de 384 dimensões e evidência com offsets em caracteres Unicod
 O cliente envia apenas os campos do contrato canônico; nomes de arquivo e
 metadados de armazenamento não saem do Laravel.
 
-`ResultPersister::handle(AnalysisRun, ProcessorResult): void` é a interface da
-próxima etapa. A implementação da Task 10 deverá repetir as validações de
-negócio e gravar páginas, chunks, achados, citações e estado `completed` na
+`ResultPersister::handle(AnalysisRun, ProcessorResult): void` está ligado a
+`PersistProcessorResult`. Ele repete o contrato Laravel e verifica novamente
+os requisitos da versão publicada, tenant, fornecedor, seleção e fingerprint.
+Páginas, chunks, achados, citações e estado `completed`/100% são gravados na
 mesma transação. `ProcessorResult` expõe `analysisId`, `findings` (DTOs
 `FindingResult` com `CitationResult`) e `processedDocuments` (arrays já
 validados, com nomes de campos iguais ao contrato Python).
 
-O binding provisório `UnavailableResultPersister` produz
-`result_persistence_unavailable` e estado `failed`. Ele impede uma conclusão
-sem achados enquanto a Task 10 não estiver integrada. Substitua esse binding
-por `PersistProcessorResult`; não é necessário mudar o cliente ou o job.
-Análises já terminais não são executadas novamente; após integrar a persistência,
-use uma nova chave para iniciar outra análise. Exceções tardias não rebaixam
-uma análise que já foi concluída em transação.
+O persister bloqueia o run e compara tentativa, UUID da mensagem e ID/número
+da reserva antes de qualquer escrita; também bloqueia fornecedor, checklist
+e documentos, nesta ordem. Respostas obsoletas e entregas duplicadas não
+alteram estados terminais. Resultados inválidos finalizam apenas a tentativa
+atual com `invalid_processor_result`, sem artefatos parciais. Erros de banco
+causam rollback e são substituídos por `analysis_failed` sanitizado para retry.
+
+Extrações idênticas reutilizam páginas e chunks; citações repetidas no mesmo
+achado são deduplicadas. Texto ou conjunto de páginas divergente de uma
+extração persistida é rejeitado, preservando citações históricas. A troca de
+algoritmo de extração que altere texto exige um desenho futuro de versões de
+extração. Embeddings são finitos, de 384 dimensões e compatíveis com float32
+do pgvector. Textos com NUL são rejeitados antes da escrita PostgreSQL.
+O indicador OCR é validado, mas não armazenado no esquema atual.
+
+`GET /api/v1/analyses/{analysis_uuid}/findings` exige autenticação e
+`analysis.view` no tenant da análise. Retorna UUIDs públicos, requisito,
+status sugerido, justificativa, confiança, resumo de busca e citações com
+documento/página/trecho/offsets Unicode. A ordem é posição/código/UUID do
+requisito; citações usam documento/página/offsets/UUID. A resposta inclui
+`requires_human_review: true` e nunca cria revisão ou decisão automática.
+Blobs, texto completo de páginas, vetores e nomes de armazenamento não são
+consultados para esta resposta. Matriz sem achados retorna `data: []`.
+
+Análises já terminais não são executadas novamente; análises que falharam
+antes da integração do persister exigem nova chave para outro run. Exceções
+tardias não rebaixam uma análise concluída em transação.
 
 ## Verificação
 

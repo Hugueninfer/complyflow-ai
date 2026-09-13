@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AnalysisController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DemoSessionController;
 use App\Http\Controllers\Api\V1\DocumentController;
+use App\Http\Controllers\Api\V1\FindingController;
 use App\Http\Controllers\Api\V1\RequirementSetController;
 use App\Http\Controllers\Api\V1\SupplierController;
 use Illuminate\Support\Facades\DB;
@@ -32,6 +33,7 @@ Route::middleware('web')->prefix('v1')->group(function (): void {
         Route::get('/documents/{document}', [DocumentController::class, 'show']);
         Route::post('/suppliers/{supplier}/analyses', [AnalysisController::class, 'store'])->middleware('throttle:30,1');
         Route::get('/analyses/{analysis}', [AnalysisController::class, 'show']);
+        Route::get('/analyses/{analysis}/findings', [FindingController::class, 'index']);
 
         Route::get('/requirement-sets', [RequirementSetController::class, 'index']);
         Route::post('/requirement-sets', [RequirementSetController::class, 'store']);

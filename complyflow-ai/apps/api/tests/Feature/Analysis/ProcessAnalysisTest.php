@@ -5,7 +5,7 @@ namespace Tests\Feature\Analysis;
 use App\Data\Processor\ProcessorResult;
 use App\Jobs\ProcessAnalysis;
 use App\Models\AnalysisRun;
-use App\Models\Requirement;
+use App\Services\Analysis\PersistProcessorResult;
 use App\Services\Processor\ProcessorClient;
 use App\Services\Processor\ProcessorException;
 use App\Services\Processor\ResultPersister;
@@ -13,7 +13,6 @@ use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 use RuntimeException;
 
 class ProcessAnalysisTest extends AnalysisTestCase
@@ -31,16 +30,7 @@ class ProcessAnalysisTest extends AnalysisTestCase
         {
             public function handle(AnalysisRun $run, ProcessorResult $result): void
             {
-                DB::transaction(function () use ($run, $result) {
-                    $finding = $result->findings[0];
-                    DB::table('analysis_findings')->insert([
-                        'public_id' => (string) Str::uuid(), 'organization_id' => $run->organization_id,
-                        'analysis_run_id' => $run->id, 'requirement_id' => Requirement::forOrganization($run->organization_id)->where('public_id', $finding->requirementId)->firstOrFail()->id,
-                        'status' => $finding->status, 'confidence' => $finding->confidence, 'justification' => $finding->justification,
-                        'search_summary' => $finding->searchSummary, 'created_at' => now(), 'updated_at' => now(),
-                    ]);
-                    $run->update(['status' => 'completed', 'progress' => 100, 'completed_at' => now()]);
-                });
+                app(PersistProcessorResult::class)->handle($run, $result);
                 DB::afterCommit(fn () => throw new RuntimeException('Late failure after committed persistence.'));
             }
         });
@@ -227,15 +217,15 @@ class ProcessAnalysisTest extends AnalysisTestCase
         Http::assertSentCount(1);
     }
 
-    public function test_default_persistence_seam_fails_closed_without_false_completion(): void
+    public function test_default_persistence_completes_valid_results(): void
     {
         $id = $this->start()->assertStatus(202)->json('data.id');
         $run = AnalysisRun::where('public_id', $id)->firstOrFail();
         Http::fake(['processor:8001/*' => Http::response($this->processorResult($id))]);
         app()->call([new ProcessAnalysis($run->id), 'handle']);
-        $this->assertSame('failed', $run->fresh()->status);
-        $this->assertSame('result_persistence_unavailable', $run->fresh()->error_code);
-        $this->assertDatabaseCount('analysis_findings', 0);
+        $this->assertSame('completed', $run->fresh()->status);
+        $this->assertNull($run->fresh()->error_code);
+        $this->assertDatabaseCount('analysis_findings', 1);
     }
 
     public function test_malformed_response_is_rejected_before_persistence(): void

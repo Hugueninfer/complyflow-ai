@@ -2,18 +2,14 @@
 
 namespace Tests\Feature\Analysis;
 
-use App\Data\Processor\ProcessorResult;
 use App\Jobs\ProcessAnalysis;
 use App\Models\AnalysisRun;
-use App\Models\Requirement;
 use App\Services\Processor\ProcessorException;
-use App\Services\Processor\ResultPersister;
 use Illuminate\Queue\MaxAttemptsExceededException;
 use Illuminate\Queue\WorkerOptions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 
@@ -25,22 +21,6 @@ class WorkerAnalysisTest extends AnalysisTestCase
         Queue::swap(Queue::getFacadeRoot()->queue);
         config(['queue.default' => 'database', 'services.processor.url' => 'http://processor:8001', 'services.processor.secret' => 'test-only-secret']);
         Http::preventStrayRequests();
-        app()->instance(ResultPersister::class, new class implements ResultPersister
-        {
-            public function handle(AnalysisRun $run, ProcessorResult $result): void
-            {
-                DB::transaction(function () use ($run, $result) {
-                    $finding = $result->findings[0];
-                    DB::table('analysis_findings')->insert([
-                        'public_id' => (string) Str::uuid(), 'organization_id' => $run->organization_id,
-                        'analysis_run_id' => $run->id, 'requirement_id' => Requirement::where('public_id', $finding->requirementId)->firstOrFail()->id,
-                        'status' => $finding->status, 'confidence' => $finding->confidence, 'justification' => $finding->justification,
-                        'search_summary' => $finding->searchSummary, 'created_at' => now(), 'updated_at' => now(),
-                    ]);
-                    $run->update(['status' => 'completed', 'progress' => 100, 'completed_at' => now()]);
-                });
-            }
-        });
 
         return AnalysisRun::where('public_id', $id)->firstOrFail();
     }
