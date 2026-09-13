@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnforceDemoQuota;
 use App\Http\Middleware\ResolveOrganization;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -15,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
+            'demo.quota' => EnforceDemoQuota::class,
             'organization' => ResolveOrganization::class,
         ]);
     })
