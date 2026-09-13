@@ -12,7 +12,7 @@ class AnalysisRun extends Model
 
     protected $guarded = ['id', 'public_id'];
 
-    protected $hidden = ['id', 'organization_id', 'supplier_id', 'requirement_set_id', 'idempotency_key', 'document_ids', 'document_set_hash'];
+    protected $hidden = ['id', 'organization_id', 'supplier_id', 'requirement_set_id', 'idempotency_key', 'document_ids', 'document_set_hash', 'owner_message_uuid', 'owner_reservation_id', 'owner_reservation_attempt'];
 
     public function uniqueIds(): array
     {

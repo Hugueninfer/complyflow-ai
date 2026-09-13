@@ -24,10 +24,12 @@ class StartAnalysis
             Organization::whereKey($tenant)->lockForUpdate()->firstOrFail();
             $supplier = Supplier::wherePublicIdForCurrentOrganization($supplier->public_id)->lockForUpdate()->firstOrFail();
             $set = RequirementSet::wherePublicIdForCurrentOrganization($setId)->where('status', 'published')->lockForUpdate()->firstOrFail();
-            abort_unless($set->requirements()->forCurrentOrganization()->exists(), 422, 'Checklist must contain requirements.');
+            $requirementCount = $set->requirements()->forCurrentOrganization()->count();
+            abort_unless($requirementCount >= 1 && $requirementCount <= 100, 422, 'Checklist must contain between 1 and 100 requirements.');
             $documents = Document::forCurrentOrganization()->where('supplier_id', $supplier->id)
                 ->whereIn('public_id', $documentIds)->orderBy('sha256')->lockForUpdate()->get();
             abort_unless($documents->count() === count($documentIds), 422, 'Invalid document selection.');
+            abort_if($documents->sum('size_bytes') > 15 * 1024 * 1024, 422, 'Selected PDFs must not exceed 15 MiB in total.');
             $fingerprint = AnalysisFingerprint::make($supplier, $set, $documents->pluck('sha256')->all());
             $run = AnalysisRun::forCurrentOrganization()->firstOrCreate(
                 ['idempotency_key' => $key],

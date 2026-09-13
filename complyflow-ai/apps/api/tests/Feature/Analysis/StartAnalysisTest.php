@@ -10,6 +10,55 @@ use Illuminate\Support\Str;
 
 class StartAnalysisTest extends AnalysisTestCase
 {
+    public function test_empty_published_checklist_is_rejected_without_consuming_quota(): void
+    {
+        $demo = $this->demo();
+        $this->set->requirements()->delete();
+        $this->start()->assertUnprocessable()->assertJsonPath('message', 'Checklist must contain between 1 and 100 requirements.');
+        $this->assertSame(0, $demo->fresh()->analyses_used);
+        $this->assertDatabaseCount('analysis_runs', 0);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_checklist_limit_is_inclusive_and_excess_does_not_consume_quota(): void
+    {
+        $demo = $this->demo();
+        $requirement = $this->set->requirements()->firstOrFail();
+        for ($index = 2; $index <= 100; $index++) {
+            $copy = $requirement->replicate(['public_id']);
+            $copy->forceFill(['code' => 'R'.$index, 'position' => $index])->save();
+        }
+        $this->start('exact-limit')->assertStatus(202);
+        $copy = $requirement->replicate(['public_id']);
+        $copy->forceFill(['code' => 'R101', 'position' => 101])->save();
+        $this->start('above-limit')->assertUnprocessable()->assertJsonPath('message', 'Checklist must contain between 1 and 100 requirements.');
+        $this->assertSame(1, $demo->fresh()->analyses_used);
+        $this->assertDatabaseCount('analysis_runs', 1);
+        Queue::assertPushed(ProcessAnalysis::class, 1);
+    }
+
+    public function test_total_pdf_byte_limit_is_inclusive_and_excess_does_not_consume_quota(): void
+    {
+        $demo = $this->demo();
+        $ids = [$this->document->public_id];
+        $this->document->update(['size_bytes' => 5 * 1024 * 1024]);
+        for ($index = 1; $index <= 2; $index++) {
+            $copy = $this->document->replicate(['public_id']);
+            $copy->forceFill(['storage_name' => Str::uuid().'.pdf', 'sha256' => hash('sha256', 'budget-'.$index)])->save();
+            $ids[] = $copy->public_id;
+        }
+        $payload = array_replace($this->payload(), ['document_ids' => $ids]);
+        $this->postJson($this->analysisUrl(), $payload, ['Idempotency-Key' => 'exact-bytes'])->assertStatus(202);
+        $copy = $this->document->replicate(['public_id']);
+        $copy->forceFill(['storage_name' => Str::uuid().'.pdf', 'sha256' => hash('sha256', 'excess-byte'), 'size_bytes' => 1])->save();
+        $payload['document_ids'][] = $copy->public_id;
+        $this->postJson($this->analysisUrl(), $payload, ['Idempotency-Key' => 'over-bytes'])->assertUnprocessable()
+            ->assertJsonPath('message', 'Selected PDFs must not exceed 15 MiB in total.');
+        $this->assertSame(1, $demo->fresh()->analyses_used);
+        $this->assertDatabaseCount('analysis_runs', 1);
+        Queue::assertPushed(ProcessAnalysis::class, 1);
+    }
+
     public function test_rejects_selection_exceeding_processor_document_limit(): void
     {
         $ids = [$this->document->public_id];

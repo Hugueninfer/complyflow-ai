@@ -41,7 +41,7 @@ class ProcessAnalysisTest extends AnalysisTestCase
                     ]);
                     $run->update(['status' => 'completed', 'progress' => 100, 'completed_at' => now()]);
                 });
-                throw new RuntimeException('Late failure after committed persistence.');
+                DB::afterCommit(fn () => throw new RuntimeException('Late failure after committed persistence.'));
             }
         });
         $job = new ProcessAnalysis($run->id);

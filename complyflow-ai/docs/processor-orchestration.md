@@ -4,6 +4,9 @@
 permissão `analysis.run` e header `Idempotency-Key` (1–255 caracteres ASCII:
 letras, números, `_`, `.`, `:`, `-`). O corpo contém `requirement_set_id`
 (UUID de uma versão publicada) e `document_ids` (lista de 1–10 UUIDs distintos).
+O checklist deve conter entre 1 e 100 requisitos, e a seleção de PDFs deve
+somar no máximo 15 MiB. Esses limites são verificados antes de criar o run,
+consumir quota ou agendar o job; respostas 422 usam mensagens estáveis.
 Todos os registros são resolvidos novamente no tenant autenticado; documentos
 devem pertencer ao fornecedor. O servidor responde `202` para uma nova análise,
 `200` para repetição idêntica e `409` se a chave já foi usada com outra entrada.
@@ -30,6 +33,15 @@ cada chamada recebe nonce novo. Erros de conexão, 408, 429 e 5xx são
 retentáveis; `provider_not_configured`, outros 4xx e resposta inválida são
 terminais. Um timeout do worker falha de forma terminal. Mensagens remotas e
 exceções com conteúdo de documentos não são propagadas ao erro público.
+
+Cada tentativa registra o UUID da mensagem, o ID da reserva na fila database
+e seu número de tentativa. O callback `failed()` só finaliza a reserva
+proprietária: duplicatas que esgotem tentativas em releases por sobreposição
+não finalizam uma execução alheia. Se um processo for morto durante a última
+reserva, o worker seguinte pode finalizar a mesma mensagem no preflight de
+esgotamento somente depois de adquirir o lock de sobreposição já expirado.
+A resposta HTTP passa por nova checagem de propriedade/estado sob lock de
+linha antes da transação de persistência, impedindo `failed` → `completed`.
 
 ## Fronteira da Task 10
 
