@@ -65,10 +65,10 @@ def post_signed(client, payload):
     return client.post("/v1/analyze", content=raw, headers=signed_headers(raw))
 
 
-def test_authenticated_valid_request_reaches_unavailable_pipeline(client):
+def test_authenticated_request_reaches_document_hash_validation(client):
     response = post_signed(client, valid_payload())
-    assert response.status_code == 503
-    assert response.json() == {"detail": "analysis_not_available"}
+    assert response.status_code == 422
+    assert response.json() == {"detail": "document_hash_mismatch"}
 
 
 @pytest.mark.parametrize("target", ["root", "requirements", "documents"])

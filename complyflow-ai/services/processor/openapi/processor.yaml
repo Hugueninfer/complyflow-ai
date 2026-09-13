@@ -8,7 +8,7 @@
     "/v1/analyze": {
       "post": {
         "summary": "Analyze",
-        "description": "Internal Laravel-to-processor endpoint. Sign the exact request body bytes: HMAC-SHA256(secret, timestamp + LF + nonce + LF + lowercase_hex(SHA256(body))). Send the lowercase hex signature; no trailing LF in the signed message. Timestamp is Unix seconds with an inclusive 60-second clock window. Use a fresh nonce for every attempt, retained for 120 seconds. No browser access. Analysis execution is unavailable until the pipeline is installed.",
+        "description": "Internal Laravel-to-processor endpoint. Sign the exact request body bytes: HMAC-SHA256(secret, timestamp + LF + nonce + LF + lowercase_hex(SHA256(body))). Send the lowercase hex signature; no trailing LF in the signed message. Timestamp is Unix seconds with an inclusive 60-second clock window. Use a fresh nonce for every attempt, retained for 120 seconds. No browser access. Extracts PDFs and returns validated findings, pages and 384-dimensional chunks.",
         "operationId": "analyze",
         "parameters": [
           {
@@ -74,7 +74,7 @@
             }
           },
           "422": {
-            "description": "Invalid JSON or closed request schema",
+            "description": "Invalid request, PDF, document hash or analysis limit",
             "content": {
               "application/json": {
                 "schema": {
@@ -84,7 +84,7 @@
             }
           },
           "503": {
-            "description": "Authentication or analysis unavailable",
+            "description": "Authentication, provider or analysis unavailable",
             "content": {
               "application/json": {
                 "schema": {

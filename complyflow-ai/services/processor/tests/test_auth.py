@@ -174,8 +174,10 @@ def test_shared_signature_vector_matches_raw_bytes_and_authenticates(client, mon
     monkeypatch.setenv("PROCESSOR_HMAC_SECRET", vector["test_secret"])
     monkeypatch.setattr(hmac_auth, "wall_clock", lambda: int(vector["timestamp"]))
     response = client.post("/v1/analyze", content=body, headers=headers)
-    assert response.status_code == 503
-    assert response.json()["detail"] == "analysis_not_available"
+    # The unchanged signed vector contains only a PDF header. Reaching the
+    # parser's invalid_pdf proves authentication and body validation succeeded.
+    assert response.status_code == 422
+    assert response.json()["detail"] == "invalid_pdf"
 
 
 def test_full_nonce_cache_returns_unavailable_and_preserves_replay_rejection(client, monkeypatch):
