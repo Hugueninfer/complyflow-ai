@@ -66,37 +66,44 @@ async function save() {
     Revisões bloqueadas para esta análise. Uma decisão final preserva o histórico.
   </p>
   <form
-    v-else-if="auth.can('finding.review')"
+    v-if="auth.can('finding.review') && (!finding.review_locked || conflicted)"
     class="review-form"
     aria-label="Revisão humana do achado"
     @submit.prevent="save"
   >
-    <h3>Registrar revisão humana</h3><p class="muted">
-      A sugestão original da IA será preservada. Esta revisão não é a decisão final do fornecedor.
+    <h3>{{ conflicted ? 'Rascunho não registrado' : 'Registrar revisão humana' }}</h3><p class="muted">
+      {{ conflicted ? 'Seu parecer permanece disponível para consulta e cópia. O envio está bloqueado.' : 'A sugestão original da IA será preservada. Esta revisão não é a decisão final do fornecedor.' }}
     </p>
-    <fieldset :disabled="busy || conflicted">
+    <fieldset :disabled="busy">
       <legend class="sr-only">
         Parecer do revisor
       </legend>
-      <label class="form-field">Status revisado<select v-model="status"><option value="met">Conforme</option><option value="partial">Parcial</option><option value="missing">Não conforme</option><option value="inconclusive">Inconclusivo</option></select></label>
+      <label class="form-field">Status revisado<select
+        v-model="status"
+        :disabled="conflicted || finding.review_locked"
+      ><option value="met">Conforme</option><option value="partial">Parcial</option><option value="missing">Não conforme</option><option value="inconclusive">Inconclusivo</option></select></label>
       <label class="form-field">Justificativa humana<textarea
         v-model="justification"
         rows="3"
         maxlength="10000"
         :aria-invalid="!!error && !justification.trim()"
+        :readonly="conflicted || finding.review_locked"
       ></textarea></label>
       <label class="form-field">Observação opcional<textarea
         v-model="note"
         rows="2"
         maxlength="10000"
+        :readonly="conflicted || finding.review_locked"
       ></textarea></label>
       <label class="human-confirmation"><input
         v-model="confirmed"
         type="checkbox"
+        :disabled="conflicted || finding.review_locked"
       />Confirmo que inspecionei as evidências e assumo esta revisão humana.</label>
       <button
         type="submit"
         class="button button-primary"
+        :disabled="conflicted || finding.review_locked"
       >
         {{ busy ? 'Registrando…' : 'Salvar revisão' }}
       </button>
@@ -105,11 +112,11 @@ async function save() {
       role="alert"
       class="error-notice"
     >
-      {{ error }}
+      {{ finding.review_locked ? 'Uma decisão final bloqueou novas revisões. Seu rascunho não foi salvo e permanece disponível para cópia.' : error }}
     </p>
   </form>
   <p
-    v-else
+    v-else-if="!auth.can('finding.review')"
     class="muted"
   >
     Sua conta pode inspecionar os achados, mas não registrar revisões.

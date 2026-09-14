@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { Bot, ArrowRight, ShieldCheck, RotateCcw } from '@lucide/vue'
 import { useAnalysisPolling } from '../composables/useAnalysisPolling'
@@ -10,13 +10,18 @@ import AnalysisTimeline from '../components/analysis/AnalysisTimeline.vue'
 import '../styles/analysis.css'
 const route = useRoute(), router = useRouter(), auth = useAuthStore()
 const { run, loading, error, stopped, restart } = useAnalysisPolling(() => String(route.params.id))
-const busy = ref(false), retryError = ref(''); let retryKey = ''
-watch(() => route.params.id, () => { retryKey = ''; retryError.value = '' })
+const busy = ref(false), retryError = ref(''); let retryKey = '', retryGeneration = 0
+watch(() => route.params.id, () => { retryGeneration++; retryKey = ''; retryError.value = ''; busy.value = false }, { flush: 'sync' })
+onBeforeUnmount(() => { retryGeneration++ })
 async function retry() {
   if (busy.value || !auth.can('analysis.run') || run.value?.status !== 'failed') return
+  const generation = retryGeneration, analysisId = String(route.params.id)
   busy.value = true; retryError.value = ''; retryKey ||= crypto.randomUUID()
-  try { const result = await api.post<Envelope<AnalysisRun>>(`/analyses/${route.params.id}/retry`, {}, { idempotencyKey: retryKey }); await router.push(`/analises/${result.data.data.id}`) }
-  catch (cause) { retryError.value = (cause as Error).message } finally { busy.value = false }
+  try {
+    const result = await api.post<Envelope<AnalysisRun>>(`/analyses/${analysisId}/retry`, {}, { idempotencyKey: retryKey })
+    if (generation === retryGeneration && String(route.params.id) === analysisId) await router.push(`/analises/${result.data.data.id}`)
+  } catch (cause) { if (generation === retryGeneration) retryError.value = (cause as Error).message }
+  finally { if (generation === retryGeneration) busy.value = false }
 }
 </script>
 <template>

@@ -3,7 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { FileText, ShieldCheck, X } from '@lucide/vue'
 import type { Finding, FindingReview } from '../../types/domain'
 import ReviewPanel from '../reviews/ReviewPanel.vue'
-defineProps<{ finding: Finding; success: string }>()
+const props = defineProps<{ finding: Finding; success: string; fallbackFocus?: HTMLElement }>()
 const emit = defineEmits<{ close: []; saved: [review: FindingReview]; conflict: [] }>()
 const panel = ref<HTMLElement>(), closeButton = ref<HTMLButtonElement>()
 const previous = document.activeElement as HTMLElement | null
@@ -15,7 +15,13 @@ onMounted(async () => {
   document.addEventListener('keydown', keyboard)
   await nextTick(); closeButton.value?.focus()
 })
-onBeforeUnmount(() => { document.removeEventListener('keydown', keyboard); siblings.forEach(({ node, inert }) => { node.inert = inert }); document.body.style.overflow = overflow; void nextTick(() => previous?.isConnected && previous.focus()) })
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', keyboard); siblings.forEach(({ node, inert }) => { node.inert = inert }); document.body.style.overflow = overflow
+  void nextTick(() => {
+    const target = previous?.isConnected ? previous : props.fallbackFocus
+    if (target?.isConnected) target.focus()
+  })
+})
 function keyboard(event: KeyboardEvent) {
   if (event.key === 'Escape') { event.preventDefault(); emit('close'); return }
   if (event.key !== 'Tab') return

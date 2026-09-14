@@ -9,6 +9,7 @@ import FindingTable from '../components/findings/FindingTable.vue'
 import EvidenceDrawer from '../components/findings/EvidenceDrawer.vue'
 import '../styles/analysis.css'
 const route = useRoute(), findings = ref<Finding[]>([]), selectedId = ref(''), loading = ref(true), error = ref(''), success = ref(''), search = ref(''), status = ref(''), category = ref(''), pending = ref(false)
+const searchInput = ref<HTMLInputElement>()
 let controller: AbortController | undefined, generation = 0
 const selected = computed(() => findings.value.find(finding => finding.id === selectedId.value))
 const categories = computed(() => [...new Set(findings.value.map(f => f.requirement.category))])
@@ -70,6 +71,7 @@ onBeforeUnmount(() => { generation++; controller?.abort() })
     <section class="surface-card resource-list">
       <div class="filter-bar matrix-filters">
         <label class="form-field search-field">Buscar requisito ou evidência<input
+          ref="searchInput"
           v-model="search"
           type="search"
           placeholder="Código, título ou trecho…"
@@ -110,6 +112,7 @@ onBeforeUnmount(() => { generation++; controller?.abort() })
     v-if="selected"
     :finding="selected"
     :success="success"
+    :fallback-focus="searchInput"
     @close="selectedId = ''"
     @saved="saved"
     @conflict="load(true)"

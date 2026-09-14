@@ -6,6 +6,46 @@ import { openWorkspace } from '../../test/workspace'
 import { finding, humanReview } from '../../test/analysis'
 
 describe('Compliance matrix', () => {
+  it('restores focus to a filter when saving removes the evidence trigger from pending findings', async () => {
+    let saved = false
+    await openWorkspace('/analises/run-1/matriz', (_path, init) => {
+      if (init.method === 'POST') { saved = true; return json({ data: humanReview }, 201) }
+      return json({ data: [{ ...finding, latest_review: saved ? humanReview : null }] })
+    }, ['analysis.view', 'finding.review'])
+    await screen.findByText('Regularidade fiscal')
+    await fireEvent.click(screen.getByLabelText('Apenas aguardando revisão'))
+    await fireEvent.click(screen.getByRole('button', { name: /inspecionar FISC-01/i }))
+    await fireEvent.update(screen.getByLabelText('Justificativa humana'), 'Inspeção concluída.')
+    await fireEvent.click(screen.getByLabelText(/confirmo que inspecionei/i))
+    await fireEvent.click(screen.getByRole('button', { name: 'Salvar revisão' })); await flushPromises()
+    await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' }); await flushPromises()
+    expect(screen.queryByRole('button', { name: /inspecionar FISC-01/i })).toBeNull()
+    expect(screen.getByLabelText('Buscar requisito ou evidência')).toHaveFocus()
+  })
+  it('keeps a conflicting draft readable and copyable after refreshing a final-decision lock', async () => {
+    let locked = false, posts = 0
+    await openWorkspace('/analises/run-1/matriz', (_path, init) => {
+      if (init.method === 'POST') { posts++; locked = true; return json({}, 409) }
+      return json({ data: [{ ...finding, review_locked: locked }] })
+    }, ['analysis.view', 'finding.review'])
+    await fireEvent.click(await screen.findByRole('button', { name: /inspecionar FISC-01/i }))
+    await fireEvent.update(screen.getByLabelText('Status revisado'), 'partial')
+    await fireEvent.update(screen.getByLabelText('Justificativa humana'), 'Escopo limitado após inspeção.')
+    await fireEvent.update(screen.getByLabelText('Observação opcional'), 'Copiar para acompanhamento.')
+    await fireEvent.click(screen.getByLabelText(/confirmo que inspecionei/i))
+    await fireEvent.click(screen.getByRole('button', { name: 'Salvar revisão' })); await flushPromises()
+    expect(screen.getByText(/revisões bloqueadas/i)).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent(/decisão final/i)
+    expect(screen.getByLabelText('Status revisado')).toHaveValue('partial')
+    const draft = screen.getByLabelText('Justificativa humana')
+    expect(draft).toHaveValue('Escopo limitado após inspeção.')
+    expect(draft).toHaveAttribute('readonly'); expect(draft).not.toBeDisabled()
+    draft.focus(); expect(draft).toHaveFocus()
+    expect(screen.getByLabelText('Observação opcional')).toHaveValue('Copiar para acompanhamento.')
+    expect(screen.getByRole('button', { name: 'Salvar revisão' })).toBeDisabled()
+    await fireEvent.submit(screen.getByRole('form', { name: 'Revisão humana do achado' })); await flushPromises()
+    expect(posts).toBe(1)
+  })
   it('filters AI statuses and text, and shows missing evidence without inventing citations', async () => {
     const missing = { ...finding, id: 'finding-2', status: 'missing', search_summary: 'Busca em todas as páginas.', citations: [], requirement: { ...finding.requirement, code: 'PRIV-01', title: 'Privacidade', category: 'LGPD' } }
     await openWorkspace('/analises/run-1/matriz', () => json({ data: [finding, missing] }), ['analysis.view'])

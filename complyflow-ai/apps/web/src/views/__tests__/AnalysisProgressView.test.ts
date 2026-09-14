@@ -7,6 +7,18 @@ import { run } from '../../test/analysis'
 
 afterEach(() => { cleanup(); vi.useRealTimers() })
 describe('Analysis progress', () => {
+  it.each(['/ajuda', '/analises/run-other'])('does not navigate when an old retry finishes after leaving for %s', async destination => {
+    let release!: (response: Response) => void
+    const router = await openWorkspace('/analises/run-1', (path, init) => {
+      if (init.method === 'POST') return new Promise(resolve => { release = resolve })
+      return json({ data: { ...run, id: path.split('/').at(-1), status: 'failed' } })
+    }, ['analysis.view', 'analysis.run'])
+    await flushPromises(); await fireEvent.click(screen.getByRole('button', { name: /reprocessar/i })); await flushPromises()
+    await router.push(destination); await flushPromises()
+    release(json({ data: { ...run, id: 'run-retried' } }, 202)); await flushPromises()
+    expect(router.currentRoute.value.path).toBe(destination)
+    if (destination.includes('run-other')) expect(screen.getByRole('button', { name: /reprocessar/i })).toBeEnabled()
+  })
   it('loads immediately, polls once at a time and stops after completion', async () => {
     vi.useFakeTimers(); let calls = 0; let release!: (r: Response) => void
     await openWorkspace('/analises/run-1', () => { calls++; return calls === 1 ? new Promise(resolve => { release = resolve }) : json({ data: { ...run, status: 'completed', progress: 100 } }) }, ['analysis.view'])
