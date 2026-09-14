@@ -28,6 +28,12 @@ Análises, retries, revisões e decisões exigem `Idempotency-Key`. Não reutili
 
 O contrato interno `POST /v1/analyze` é [OpenAPI 3.1](../services/processor/openapi/processor.yaml), verificado contra a aplicação. [Assinatura, janela e replay](../services/processor/openapi/README.md). O schema é apenas uma fronteira: ambas as aplicações também conferem correspondência literal de trecho/página e IDs do snapshot.
 
+## Pesos e versões de checklists
+
+`requirements.*.weight` aceita números de `0.001` a `999.999` na criação/edição; quando omitido, o peso padrão é `1`. O mínimo corresponde à precisão `decimal(6,3)` do banco e impede arredondamento de pesos positivos para zero. Publicação e início de análise revalidam pesos persistidos, inclusive dados legados. Peso inválido retorna 422 com a chave `errors.requirements.N.weight`, sem publicar, criar análise, consumir cota ou enfileirar trabalho. O contrato interno continua exigindo peso estritamente positivo em PHP/Pydantic.
+
+Uma nova versão parte da última versão publicada ativa da linhagem e exige ausência de rascunho ativo. O número é `max(version) + 1` considerando também exclusões lógicas; v1 publicada → v2 rascunho → excluir v2 → criar a partir de v1 produz v3. Renomear uma versão não muda sua linhagem. Fonte obsoleta, fonte não publicada ou rascunho ativo retorna 409; recurso de outro tenant ou excluído retorna 404; falta de permissão retorna 403. Escritas da linhagem adquirem locks na ordem raiz → versão. Chamadas concorrentes são serializadas: uma cria o rascunho (201), a seguinte observa esse rascunho e retorna 409. O índice único permanece como proteção adicional contra colisões.
+
 ## Operações ainda sem formulário na SPA
 
 Cadastro owner usa `POST /api/v1/register` com `name`, `email`, `organization_name`, `password` (mínimo 12 caracteres) e `password_confirmation` igual. Escolha suas próprias credenciais; não há conta/senha compartilhada. O endpoint inicia uma sessão no cliente HTTP; depois é possível usar o formulário de login do navegador com essas credenciais.

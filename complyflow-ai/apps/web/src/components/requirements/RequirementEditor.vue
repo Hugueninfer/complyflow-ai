@@ -26,7 +26,7 @@ async function save() {
     }
     if (codes.has(r.code.trim())) fields.value[`requirements.${i}.code`] = 'Use um código único neste conjunto.'
     codes.add(r.code.trim())
-    if (r.weight === '' || !Number.isFinite(Number(r.weight)) || Number(r.weight) < 0 || Number(r.weight) > 999.999) fields.value[`requirements.${i}.weight`] = 'Informe um peso entre 0 e 999,999.'
+    if (r.weight === '' || !Number.isFinite(Number(r.weight)) || Number(r.weight) < 0.001 || Number(r.weight) > 999.999) fields.value[`requirements.${i}.weight`] = 'Informe um peso entre 0,001 e 999,999.'
   })
   if (!Object.keys(fields.value).length) {
     busy.value = true
@@ -132,7 +132,7 @@ async function save() {
             :id="`requirement-${index}-weight`"
             v-model="requirement.weight"
             type="number"
-            min="0"
+            min="0.001"
             max="999.999"
             step="0.001"
             :aria-invalid="!!fields[`requirements.${index}.weight`]"

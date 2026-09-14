@@ -30,7 +30,7 @@ class RequirementSetLineageMigrationTest extends TestCase
         $this->actingAs($owner)
             ->postJson('/api/v1/requirement-sets/'.DB::table('requirement_sets')->where('id', $v2)->value('public_id').'/versions')
             ->assertStatus(409)
-            ->assertJsonPath('message', 'The next requirement set version already exists.');
+            ->assertJsonPath('message', 'A draft requirement set version already exists.');
         $this->assertSame(1, DB::table('requirement_sets')->where('version', 3)->count());
     }
 
@@ -41,9 +41,10 @@ class RequirementSetLineageMigrationTest extends TestCase
         $this->assertSame($v1, DB::table('requirement_sets')->where('id', $v3)->value('parent_id'));
         $this->actingAs($owner)
             ->postJson('/api/v1/requirement-sets/'.DB::table('requirement_sets')->where('id', $v2)->value('public_id').'/versions')
-            ->assertStatus(409)
-            ->assertJsonPath('message', 'The next requirement set version already exists.');
+            ->assertCreated()
+            ->assertJsonPath('data.version', 4);
         $this->assertSame(1, DB::table('requirement_sets')->where('version', 3)->count());
+        $this->assertSame($v1, DB::table('requirement_sets')->where('version', 4)->value('parent_id'));
     }
 
     /** @return array{User, int, int, int} */

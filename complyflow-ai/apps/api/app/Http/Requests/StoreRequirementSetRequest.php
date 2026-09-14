@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\RequirementSet;
 use App\Support\CurrentOrganization;
+use App\Support\RequirementWeights;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -57,7 +58,7 @@ class StoreRequirementSetRequest extends FormRequest
             'requirements.*.code' => ['required', 'string', 'max:255', 'distinct'],
             'requirements.*.title' => ['required', 'string', 'max:255'],
             'requirements.*.category' => ['required', 'string', 'max:255'],
-            'requirements.*.weight' => ['sometimes', 'numeric', 'min:0', 'max:999.999'],
+            'requirements.*.weight' => ['sometimes', ...RequirementWeights::rules()],
             'requirements.*.position' => ['sometimes', 'integer', 'min:0'],
             'requirements.*.evaluation_text' => ['required', 'string'],
             'requirements.*.is_required' => ['sometimes', 'boolean'],

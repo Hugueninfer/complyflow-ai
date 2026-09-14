@@ -10,6 +10,7 @@ use App\Models\Organization;
 use App\Models\RequirementSet;
 use App\Models\Supplier;
 use App\Support\CurrentOrganization;
+use App\Support\RequirementWeights;
 use Illuminate\Support\Facades\DB;
 
 class StartAnalysis
@@ -28,6 +29,7 @@ class StartAnalysis
             $set = RequirementSet::wherePublicIdForCurrentOrganization($setId)->where('status', 'published')->lockForUpdate()->firstOrFail();
             $requirementCount = $set->requirements()->forCurrentOrganization()->count();
             abort_unless($requirementCount >= 1 && $requirementCount <= 100, 422, 'Checklist must contain between 1 and 100 requirements.');
+            RequirementWeights::validate($set);
             $documents = Document::forCurrentOrganization()->where('supplier_id', $supplier->id)
                 ->whereIn('public_id', $documentIds)->orderBy('sha256')->lockForUpdate()->get();
             abort_unless($documents->count() === count($documentIds), 422, 'Invalid document selection.');

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreRequirementSetRequest;
 use App\Models\Requirement;
 use App\Models\RequirementSet;
+use App\Support\RequirementWeights;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -95,6 +96,7 @@ class RequirementSetController extends Controller
                 abort(409, 'Only draft requirement sets can be published.');
             }
 
+            RequirementWeights::validate($set);
             $set->update(['status' => 'published', 'published_at' => now()]);
 
             return $set;
@@ -115,14 +117,16 @@ class RequirementSetController extends Controller
                 }
 
                 $root = $this->lineageRoot($source);
-                $version = $source->version + 1;
-                $exists = RequirementSet::query()
-                    ->withTrashed()
+                // resolve(lock: true) holds the root before the version: all
+                // lineage mutations serialize before checking current state.
+                $lineage = RequirementSet::query()
                     ->forCurrentOrganization()
-                    ->where('parent_id', $root->id)
-                    ->where('version', $version)
-                    ->exists();
-                abort_if($exists, 409, 'The next requirement set version already exists.');
+                    ->where(fn ($query) => $query->whereKey($root->id)->orWhere('parent_id', $root->id));
+                abort_if((clone $lineage)->where('status', 'draft')->exists(), 409, 'A draft requirement set version already exists.');
+                $latestPublished = (clone $lineage)->where('status', 'published')->orderByDesc('version')->firstOrFail();
+                abort_unless($latestPublished->id === $source->id, 409, 'Only the latest published requirement set can be versioned.');
+                // Deleted versions reserve their numbers without blocking progress.
+                $version = (clone $lineage)->withTrashed()->max('version') + 1;
 
                 $clone = RequirementSet::query()->create([
                     'parent_id' => $root->id,

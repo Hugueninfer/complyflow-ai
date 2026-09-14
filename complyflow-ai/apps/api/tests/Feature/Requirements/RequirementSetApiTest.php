@@ -215,7 +215,7 @@ class RequirementSetApiTest extends TestCase
         $this->assertSame($v1->id, $v3->parent_id);
     }
 
-    public function test_soft_deleted_version_reserves_sequence_and_retry_returns_controlled_conflict(): void
+    public function test_soft_deleted_version_reserves_sequence_and_next_draft_can_be_published(): void
     {
         $organization = $this->organization('Northwind');
         $owner = $this->userWithRole($organization, 'owner');
@@ -229,8 +229,44 @@ class RequirementSetApiTest extends TestCase
 
         $this->actingAs($owner)
             ->postJson('/api/v1/requirement-sets/'.$v1Id.'/versions')
-            ->assertStatus(409)
-            ->assertJsonPath('message', 'The next requirement set version already exists.');
+            ->assertCreated()
+            ->assertJsonPath('data.version', 3);
+        $v3Id = RequirementSet::where('version', 3)->firstOrFail()->public_id;
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$v3Id.'/publish')->assertOk();
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$v1Id.'/versions')->assertStatus(409);
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$v2Id.'/versions')->assertNotFound();
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$v3Id.'/versions')
+            ->assertCreated()->assertJsonPath('data.version', 4);
+    }
+
+    public function test_create_and_edit_reject_weights_that_are_not_positive_at_storage_precision(): void
+    {
+        $owner = $this->userWithRole($this->organization('Northwind'), 'owner');
+        $id = $this->createSet($owner);
+        foreach ([0, -1, 0.0001] as $weight) {
+            $requirements = [array_replace($this->requirement('R1', 'Criterion', 0), ['weight' => $weight])];
+            $this->actingAs($owner)->postJson('/api/v1/requirement-sets', ['name' => 'Invalid', 'requirements' => $requirements])
+                ->assertUnprocessable()->assertJsonValidationErrors('requirements.0.weight');
+            $this->actingAs($owner)->putJson('/api/v1/requirement-sets/'.$id, ['requirements' => $requirements])
+                ->assertUnprocessable()->assertJsonValidationErrors('requirements.0.weight');
+        }
+        $this->assertSame('1.500', RequirementSet::where('public_id', $id)->firstOrFail()->requirements()->firstOrFail()->weight);
+    }
+
+    public function test_publish_revalidates_legacy_weight_before_freezing_draft(): void
+    {
+        $owner = $this->userWithRole($this->organization('Northwind'), 'owner');
+        $id = $this->createSet($owner);
+        $set = RequirementSet::where('public_id', $id)->firstOrFail();
+        $set->requirements()->update(['weight' => 0]);
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$id.'/publish')
+            ->assertUnprocessable()->assertJsonValidationErrors('requirements.0.weight');
+        $this->assertSame('draft', $set->fresh()->status);
+        $this->assertNull($set->fresh()->published_at);
+        $this->actingAs($owner)->putJson('/api/v1/requirement-sets/'.$id, [
+            'requirements' => [array_replace($this->requirement('R1', 'Criterion', 0), ['weight' => 0.001])],
+        ])->assertOk()->assertJsonPath('data.requirements.0.weight', '0.001');
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$id.'/publish')->assertOk();
     }
 
     public function test_duplicate_name_and_version_are_rejected_on_create_and_update(): void

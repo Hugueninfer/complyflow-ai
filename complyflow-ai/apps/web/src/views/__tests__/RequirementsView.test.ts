@@ -5,6 +5,18 @@ import { json } from '../../test/server'
 import { openWorkspace, requirementSet } from '../../test/workspace'
 
 describe('Requirement lifecycle', () => {
+  it.each([0, -1, 0.0001])('keeps an invalid weight %s editable and identifies the field before saving', async (weight) => {
+    await openWorkspace('/requisitos', () => json({ data: [requirementSet] }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Editar rascunho' }))
+    const input = screen.getByLabelText('Peso 1')
+    await fireEvent.update(input, String(weight))
+    await fireEvent.submit(screen.getByRole('form', { name: 'Editor de requisitos' }))
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(input).toHaveAccessibleDescription('Informe um peso entre 0,001 e 999,999.')
+    expect(input).toHaveFocus()
+    expect(screen.getByRole('form', { name: 'Editor de requisitos' })).toBeVisible()
+  })
+
   it('preserves a new draft when an older GET completes after the successful POST', async () => {
     let release!: (response: Response) => void
     await openWorkspace('/requisitos', (_path, init) => init.method === 'POST' ? json({ data: requirementSet }, 201) : new Promise(resolve => { release = resolve }))

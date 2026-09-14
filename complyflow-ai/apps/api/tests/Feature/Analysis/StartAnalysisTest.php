@@ -4,12 +4,40 @@ namespace Tests\Feature\Analysis;
 
 use App\Jobs\ProcessAnalysis;
 use App\Models\AnalysisRun;
+use App\Models\RequirementSet;
+use App\Services\Processor\ProcessorClient;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
 class StartAnalysisTest extends AnalysisTestCase
 {
+    public function test_legacy_published_zero_weight_is_rejected_before_queue_and_quota(): void
+    {
+        $demo = $this->demo();
+        $this->set->requirements()->update(['weight' => 0]);
+        $this->start()->assertUnprocessable()->assertJsonValidationErrors('requirements.0.weight');
+        $this->assertSame(0, $demo->fresh()->analyses_used);
+        $this->assertDatabaseCount('analysis_runs', 0);
+        Queue::assertNothingPushed();
+        $owner = $this->user($this->organization, 'owner');
+        $requirement = ['code' => 'MIN', 'title' => 'Minimum weight', 'category' => 'Compliance', 'weight' => 1, 'evaluation_text' => 'Find evidence'];
+        $setId = $this->actingAs($owner)->postJson('/api/v1/requirement-sets', ['name' => 'Positive checklist', 'requirements' => [$requirement]])
+            ->assertCreated()->json('data.id');
+        $requirement['weight'] = 0.001;
+        $this->putJson('/api/v1/requirement-sets/'.$setId, ['requirements' => [$requirement]])->assertOk();
+        $this->postJson('/api/v1/requirement-sets/'.$setId.'/publish')->assertOk();
+        $this->set = RequirementSet::where('public_id', $setId)->firstOrFail();
+        $runId = $this->start()->assertStatus(202)->json('data.id');
+        Queue::assertPushed(ProcessAnalysis::class, 1);
+        config(['services.processor.url' => 'http://processor:8001', 'services.processor.secret' => 'test-only-secret']);
+        Http::fake(['processor:8001/*' => Http::response($this->processorResult($runId))]);
+        $result = app(ProcessorClient::class)->analyze(AnalysisRun::where('public_id', $runId)->firstOrFail());
+        $this->assertSame($runId, $result->analysisId);
+        Http::assertSent(fn ($request) => $request['requirements'][0]['weight'] === 0.001);
+    }
+
     public function test_empty_published_checklist_is_rejected_without_consuming_quota(): void
     {
         $demo = $this->demo();
