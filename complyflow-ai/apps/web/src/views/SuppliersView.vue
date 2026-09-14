@@ -6,15 +6,18 @@ import { useAuthStore } from '../stores/auth'
 import type { Envelope, Supplier } from '../types/domain'
 import SupplierForm from '../components/suppliers/SupplierForm.vue'
 import ResourceState from '../components/ui/ResourceState.vue'
+import { useResourceCollection } from '../composables/useResourceCollection'
 const auth = useAuthStore()
-const suppliers = ref<Supplier[]>([])
-const loading = ref(true), error = ref(''), success = ref(''), creating = ref(false), search = ref(''), risk = ref('')
+const { items: suppliers, loading, error, load, upsert } = useResourceCollection(
+  async () => (await api.get<Envelope<Supplier[]>>('/suppliers')).data.data,
+  (a, b) => a.name.localeCompare(b.name),
+)
+const success = ref(''), creating = ref(false), search = ref(''), risk = ref('')
 const createButton = ref<HTMLButtonElement>()
 const riskLabels = { low: 'Baixo', medium: 'Médio', high: 'Alto' }
 const filtered = computed(() => suppliers.value.filter(s => `${s.name} ${s.tax_id ?? ''}`.toLocaleLowerCase('pt-BR').includes(search.value.toLocaleLowerCase('pt-BR').trim()) && (!risk.value || s.risk_level === risk.value)))
-async function load() { loading.value = true; error.value = ''; try { suppliers.value = (await api.get<Envelope<Supplier[]>>('/suppliers')).data.data } catch (cause) { error.value = (cause as Error).message } finally { loading.value = false } }
 function close() { creating.value = false; void nextTick(() => createButton.value?.focus()) }
-function saved(supplier: Supplier) { suppliers.value = [...suppliers.value, supplier].sort((a, b) => a.name.localeCompare(b.name)); success.value = 'Fornecedor cadastrado com sucesso.'; search.value = ''; risk.value = ''; close() }
+function saved(supplier: Supplier) { upsert(supplier); success.value = 'Fornecedor cadastrado com sucesso.'; search.value = ''; risk.value = ''; close() }
 onMounted(load)
 </script>
 <template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { UploadCloud, FileText, ShieldCheck } from '@lucide/vue'
 import { api, ApiError } from '../../lib/api'
 import type { DocumentMetadata, Envelope } from '../../types/domain'
@@ -12,13 +12,14 @@ function select(files: FileList | File[] | null) {
   const file = files?.[0]
   if (!file) return
   if (files!.length !== 1) error.value = 'Selecione um PDF por envio.'
-  else if (!/\.pdf$/i.test(file.name) || file.type !== 'application/pdf') error.value = 'Somente PDF com extensão .pdf e tipo application/pdf é aceito.'
+  else if (!/\.pdf$/i.test(file.name) || (file.type && file.type !== 'application/pdf')) error.value = 'Somente PDF com extensão .pdf e tipo compatível é aceito.'
   else if (!file.size) error.value = 'O arquivo está vazio. Selecione um PDF válido.'
   else if (file.size > 5 * 1024 * 1024) error.value = 'Selecione um PDF de até 5 MiB.'
   else selected.value = file
   if (input.value) input.value.value = ''
 }
 function drop(event: DragEvent) { dragging.value = false; select(event.dataTransfer?.files ?? null) }
+function removeSelection() { selected.value = undefined; error.value = ''; failed.value = false; void nextTick(() => input.value?.focus()) }
 async function upload(supplierId: string) {
   if (!selected.value || busy.value) return
   busy.value = true; error.value = ''; success.value = ''; failed.value = false
@@ -30,7 +31,7 @@ async function upload(supplierId: string) {
   } catch (cause) {
     failed.value = true
     error.value = cause instanceof ApiError && cause.status === 429 ? 'O limite de documentos ou a cota de armazenamento foi atingido. Aguarde antes de tentar novamente.' : (cause as Error).message
-  } finally { busy.value = false }
+  } finally { busy.value = false; if (!selected.value) void nextTick(() => input.value?.focus()) }
 }
 </script>
 <template>
@@ -100,7 +101,7 @@ async function upload(supplierId: string) {
       </div><button
         class="button button-secondary"
         :disabled="busy"
-        @click="selected = undefined; error = ''; failed = false"
+        @click="removeSelection"
       >
         Remover seleção
       </button>

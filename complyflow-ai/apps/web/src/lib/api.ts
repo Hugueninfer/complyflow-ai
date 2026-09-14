@@ -1,7 +1,8 @@
 export class ApiError extends Error {
   status: number
   fields: Record<string, string>
-  constructor(status: number, fields: Record<string, string> = {}) {
+  code?: string
+  constructor(status: number, fields: Record<string, string> = {}, code?: string) {
     const messages: Record<number, string> = {
       0: 'Não foi possível conectar. Verifique sua conexão e tente novamente.',
       401: 'Sua sessão expirou. Entre novamente para continuar.',
@@ -13,10 +14,14 @@ export class ApiError extends Error {
       422: 'Verifique os dados informados e tente novamente.',
       429: 'Muitas tentativas. Aguarde um momento e tente novamente.',
     }
-    super(messages[status] ?? 'Não foi possível concluir a solicitação. Tente novamente.')
+    const storageQuota = status === 413 && code === 'demo_storage_quota_exceeded'
+    super(storageQuota
+      ? 'A cota de armazenamento desta demonstração foi esgotada. Inicie uma nova demonstração para enviar mais documentos.'
+      : messages[status] ?? 'Não foi possível concluir a solicitação. Tente novamente.')
     this.name = 'ApiError'
     this.status = status
     this.fields = fields
+    this.code = storageQuota ? code : undefined
   }
 }
 
@@ -55,13 +60,13 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     if (response.status === 401) unauthorized?.()
     if (!response.ok) {
       const fields: Record<string, string> = {}
+      const payload = await response.json().catch(() => null) as { errors?: unknown; code?: unknown } | null
       if (response.status === 422) {
-        const payload = await response.json().catch(() => null) as { errors?: unknown } | null
         if (payload?.errors && typeof payload.errors === 'object') {
           for (const key of Object.keys(payload.errors)) fields[key] = 'Verifique este campo.'
         }
       }
-      throw new ApiError(response.status, fields)
+      throw new ApiError(response.status, fields, typeof payload?.code === 'string' ? payload.code : undefined)
     }
     if (response.status === 204) return { data: undefined as T, status: response.status }
     return { data: await response.json() as T, status: response.status }

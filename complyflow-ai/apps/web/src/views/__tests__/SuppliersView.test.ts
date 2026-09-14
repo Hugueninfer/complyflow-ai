@@ -1,9 +1,22 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
 import { json } from '../../test/server'
 import { openWorkspace, supplier, pdfDocument } from '../../test/workspace'
 
 describe('Supplier workspace', () => {
+  it('reconciles a supplier saved before the initial GET completes with the older server list', async () => {
+    let release!: (response: Response) => void
+    await openWorkspace('/fornecedores', (_path, init) => init.method === 'POST' ? json({ data: supplier }, 201) : new Promise(resolve => { release = resolve }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Novo fornecedor' }))
+    await fireEvent.update(screen.getByLabelText('Razão social'), supplier.name)
+    await fireEvent.submit(screen.getByRole('form', { name: 'Cadastro do fornecedor' }))
+    await screen.findByRole('status')
+    release(json({ data: [{ ...supplier, id: 'older-id', name: 'VerdeLog' }] }))
+    await flushPromises()
+    expect(screen.getByRole('link', { name: supplier.name })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'VerdeLog' })).toBeVisible()
+  })
   it('renders empty state, validates a new supplier and reflects the saved server record', async () => {
     const records: typeof supplier[] = []
     await openWorkspace('/fornecedores', (_path, init) => {

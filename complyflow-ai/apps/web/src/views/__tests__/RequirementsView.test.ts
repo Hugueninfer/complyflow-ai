@@ -1,9 +1,26 @@
 import { fireEvent, screen, waitFor } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
 import { json } from '../../test/server'
 import { openWorkspace, requirementSet } from '../../test/workspace'
 
 describe('Requirement lifecycle', () => {
+  it('preserves a new draft when an older GET completes after the successful POST', async () => {
+    let release!: (response: Response) => void
+    await openWorkspace('/requisitos', (_path, init) => init.method === 'POST' ? json({ data: requirementSet }, 201) : new Promise(resolve => { release = resolve }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Novo conjunto' }))
+    await fireEvent.update(screen.getByLabelText('Nome do conjunto'), 'Homologação')
+    await fireEvent.update(screen.getByLabelText('Código 1'), 'FISC-01')
+    await fireEvent.update(screen.getByLabelText('Título 1'), 'Certidão')
+    await fireEvent.update(screen.getByLabelText('Categoria 1'), 'Fiscal')
+    await fireEvent.update(screen.getByLabelText('Critério de avaliação 1'), 'Validade vigente')
+    await fireEvent.submit(screen.getByRole('form', { name: 'Editor de requisitos' }))
+    await screen.findByRole('status')
+    release(json({ data: [{ ...requirementSet, id: 'older-id', name: 'Conjunto anterior' }] }))
+    await flushPromises()
+    expect(screen.getByRole('heading', { name: 'Homologação' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Conjunto anterior' })).toBeVisible()
+  })
   it('creates a validated draft with evaluation criteria and announces server field errors', async () => {
     let conflict = true
     await openWorkspace('/requisitos', (_path, init) => {

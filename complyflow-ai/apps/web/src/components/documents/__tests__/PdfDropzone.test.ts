@@ -11,6 +11,33 @@ async function choose(input: HTMLElement, files: File[]) {
   await fireEvent(input, new Event('change', { bubbles: true }))
 }
 describe('PDF upload', () => {
+  it('explains exhausted storage for a small PDF without incorrectly blaming its file size', async () => {
+    await openUpload((_path, init) => init.method === 'POST'
+      ? json({ code: 'demo_storage_quota_exceeded', message: 'private arbitrary detail' }, 413)
+      : json({ data: [], meta: { current_page: 1, last_page: 1, total: 0 } }))
+    await choose(await screen.findByLabelText('Arquivos PDF'), [new File(['%PDF'], 'small.pdf', { type: 'application/pdf' })])
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirmar e enviar PDF' }))
+    const error = await screen.findByRole('alert')
+    expect(error).toHaveTextContent(/cota de armazenamento.*demonstração/i)
+    expect(error).not.toHaveTextContent(/5 MiB|private arbitrary detail/)
+  })
+
+  it.each(['', 'application/pdf'])('accepts PDF MIME %s and restores file-picker focus after removal and success', async type => {
+    await openUpload((_path, init) => init.method === 'POST' ? json({ data: pdfDocument }, 201) : json({ data: [], meta: { current_page: 1, last_page: 1, total: 0 } }))
+    const input = await screen.findByLabelText('Arquivos PDF')
+    const file = new File(['%PDF'], 'unknown-mime.pdf', { type })
+    await choose(input, [file])
+    const remove = screen.getByRole('button', { name: 'Remover seleção' })
+    remove.focus()
+    await fireEvent.click(remove)
+    await waitFor(() => expect(input).toHaveFocus())
+    await choose(input, [file])
+    const send = screen.getByRole('button', { name: 'Confirmar e enviar PDF' })
+    send.focus()
+    await fireEvent.click(send)
+    await screen.findByRole('status')
+    await waitFor(() => expect(input).toHaveFocus())
+  })
   it.each([
     ['text.txt', 'text/plain', 10, /somente pdf/i],
     ['fake.pdf', 'text/plain', 10, /somente pdf/i],

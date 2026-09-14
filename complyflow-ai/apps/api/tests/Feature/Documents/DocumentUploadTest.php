@@ -121,7 +121,9 @@ class DocumentUploadTest extends DocumentTestCase
         $demo = $this->demo();
         $demo->update(['storage_used_bytes' => 15728640]);
         $other = $this->user($this->organization, 'analyst');
-        $this->actingAs($other)->postJson($this->url(), ['file' => $this->pdf()])->assertStatus(413);
+        $this->actingAs($other)->postJson($this->url(), ['file' => $this->pdf()])->assertStatus(413)
+            ->assertJsonPath('code', 'demo_storage_quota_exceeded')
+            ->assertExactJson(['code' => 'demo_storage_quota_exceeded', 'message' => 'Demo storage quota exceeded.']);
         $this->assertSame(15728640, $demo->fresh()->storage_used_bytes);
         $this->assertDatabaseCount('document_blobs', 0);
     }

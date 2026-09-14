@@ -6,14 +6,17 @@ import { useAuthStore } from '../stores/auth'
 import type { Envelope, RequirementSet } from '../types/domain'
 import ResourceState from '../components/ui/ResourceState.vue'
 import RequirementEditor from '../components/requirements/RequirementEditor.vue'
+import { useResourceCollection } from '../composables/useResourceCollection'
 const auth = useAuthStore()
-const sets = ref<RequirementSet[]>([]), editing = ref<RequirementSet>(), creating = ref(false), publishing = ref<string>(), loading = ref(true), busy = ref(false), error = ref(''), actionError = ref(''), success = ref('')
+const { items: sets, loading, error, load, upsert } = useResourceCollection(
+  async () => (await api.get<Envelope<RequirementSet[]>>('/requirement-sets')).data.data,
+  (a, b) => a.name.localeCompare(b.name) || b.version - a.version,
+)
+const editing = ref<RequirementSet>(), creating = ref(false), publishing = ref<string>(), busy = ref(false), actionError = ref(''), success = ref('')
 const heading = ref<HTMLHeadingElement>()
 let trigger: HTMLElement | null = null
-async function load() { loading.value = true; error.value = ''; try { sets.value = (await api.get<Envelope<RequirementSet[]>>('/requirement-sets')).data.data } catch (cause) { error.value = (cause as Error).message } finally { loading.value = false } }
 function start(set?: RequirementSet) { trigger = document.activeElement as HTMLElement; editing.value = set; creating.value = !set; publishing.value = undefined; success.value = ''; actionError.value = '' }
 function close() { editing.value = undefined; creating.value = false; void nextTick(() => (trigger?.isConnected ? trigger : heading.value)?.focus()) }
-function upsert(set: RequirementSet) { sets.value = [...sets.value.filter(s => s.id !== set.id), set].sort((a, b) => a.name.localeCompare(b.name) || b.version - a.version) }
 function saved(set: RequirementSet) { upsert(set); success.value = 'Rascunho salvo com sucesso.'; close() }
 async function publish(id: string) { if (busy.value) return; busy.value = true; actionError.value = ''; try { upsert((await api.post<Envelope<RequirementSet>>(`/requirement-sets/${id}/publish`)).data.data); publishing.value = undefined; success.value = 'Versão publicada. Seu conteúdo é imutável.'; void nextTick(() => heading.value?.focus()) } catch (cause) { actionError.value = (cause as Error).message } finally { busy.value = false } }
 async function version(set: RequirementSet) { if (busy.value) return; busy.value = true; actionError.value = ''; try { const clone = (await api.post<Envelope<RequirementSet>>(`/requirement-sets/${set.id}/versions`)).data.data; upsert(clone); start(clone) } catch (cause) { actionError.value = (cause as Error).message } finally { busy.value = false } }

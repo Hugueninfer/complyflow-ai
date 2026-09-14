@@ -42,8 +42,9 @@ class StorePdf
                     return $existing;
                 }
 
-                abort_if($demo !== null && $demo->storage_used_bytes + $size > $demo->storage_quota_bytes,
-                    413, 'Demo storage quota exceeded.');
+                if ($demo !== null && $demo->storage_used_bytes + $size > $demo->storage_quota_bytes) {
+                    throw new DemoStorageQuotaExceeded;
+                }
 
                 $name = Str::uuid().'.pdf';
                 $document = Document::query()->create([
