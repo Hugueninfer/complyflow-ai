@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import HelloWorld from './components/HelloWorld.vue'
+import { useRoute } from 'vue-router'
+import AppShell from './components/layout/AppShell.vue'
+const route = useRoute()
 </script>
 
 <template>
-  <HelloWorld />
+  <AppShell v-if="route.meta.requiresAuth">
+    <RouterView />
+  </AppShell>
+  <RouterView v-else />
 </template>

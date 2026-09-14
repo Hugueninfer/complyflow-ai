@@ -5,18 +5,40 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "vitest run",
+    "test:session-http": "node scripts/smoke-session.mjs",
+    "typecheck": "vue-tsc -b",
+    "lint": "eslint . --max-warnings 0",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "vue": "^3.5.42"
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
+    "@lucide/vue": "^1.45.0",
+    "pinia": "^4.0.3",
+    "vue": "^3.5.42",
+    "vue-router": "^5.3.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/vue": "^8.1.0",
     "@types/node": "^24.13.3",
     "@vitejs/plugin-vue": "^6.0.8",
+    "@vue/test-utils": "^2.5.0",
     "@vue/tsconfig": "^0.9.1",
+    "eslint": "^10.10.0",
+    "eslint-plugin-vue": "^10.11.0",
+    "globals": "^17.12.0",
+    "jsdom": "^30.0.1",
+    "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
+    "typescript-eslint": "^8.70.0",
     "vite": "^8.3.0",
+    "vitest": "^5.0.0",
     "vue-tsc": "^3.3.11"
   }
 }

@@ -28,7 +28,7 @@ services:
       context: .
       dockerfile: infra/docker/api/Dockerfile
     working_dir: /workspace/apps/api
-    command: php artisan serve --host=0.0.0.0 --port=8000
+    command: php artisan serve --host=0.0.0.0 --port=8000 --no-reload
     environment:
       APP_ENV: local
       APP_DEBUG: "true"

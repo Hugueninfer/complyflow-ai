@@ -28,6 +28,7 @@ Route::middleware('web')->prefix('v1')->group(function (): void {
     Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
 
     Route::middleware(['auth:sanctum', 'organization'])->group(function (): void {
+        Route::get('/me', [AuthController::class, 'me']);
         Route::get('/dashboard', DashboardController::class);
         Route::get('/comparisons', SupplierComparisonController::class);
         Route::get('/suppliers', [SupplierController::class, 'index']);
