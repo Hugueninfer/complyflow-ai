@@ -78,7 +78,7 @@ async function logout() {
           v-for="item in navigation"
           :key="item.path"
           :to="item.path"
-          :class="{ active: route.path === item.path }"
+          :class="{ active: route.path === item.path || (item.path !== '/' && route.path.startsWith(`${item.path}/`)) }"
         >
           <component
             :is="item.icon"
@@ -186,7 +186,8 @@ async function logout() {
             v-for="item in navigation"
             :key="item.path"
             :to="item.path"
-            :class="{ active: route.path === item.path }"
+            :class="{ active: route.path === item.path || (item.path !== '/' && route.path.startsWith(`${item.path}/`)) }"
+            @click="closeDrawer"
           >
             <component
               :is="item.icon"

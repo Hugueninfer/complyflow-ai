@@ -37,6 +37,7 @@ Route::middleware('web')->prefix('v1')->group(function (): void {
         Route::put('/suppliers/{supplier}', [SupplierController::class, 'update']);
         Route::patch('/suppliers/{supplier}', [SupplierController::class, 'update']);
         Route::delete('/suppliers/{supplier}', [SupplierController::class, 'destroy']);
+        Route::get('/suppliers/{supplier}/documents', [DocumentController::class, 'index']);
         Route::post('/suppliers/{supplier}/documents', [DocumentController::class, 'store']);
         Route::get('/documents/{document}', [DocumentController::class, 'show']);
         Route::post('/suppliers/{supplier}/analyses', [AnalysisController::class, 'store'])->middleware('throttle:30,1');

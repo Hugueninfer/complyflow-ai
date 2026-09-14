@@ -1,5 +1,5 @@
 import { createPinia } from 'pinia'
-import { render, fireEvent, screen, waitFor } from '@testing-library/vue'
+import { render, fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import { createMemoryHistory } from 'vue-router'
 import { describe, expect, it } from 'vitest'
 import App from '../../App.vue'
@@ -17,6 +17,16 @@ async function openLogin(path = '/login') {
 }
 
 describe('Login and protected navigation', () => {
+  it('closes the mobile drawer when selecting the route that is already active', async () => {
+    fakeServer(() => json({ data: session }))
+    await openLogin('/')
+    const trigger = screen.getByRole('button', { name: 'Abrir navegação' })
+    await fireEvent.click(trigger)
+    await fireEvent.click(within(screen.getByRole('dialog')).getByRole('link', { name: 'Visão Geral' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+    expect(document.body.style.overflow).not.toBe('hidden')
+  })
   it('starts an isolated demo, restores server identity and opens the dashboard', async () => {
     let started = false
     fakeServer((path, init) => {

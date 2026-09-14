@@ -23,7 +23,7 @@ Para Vite fora do Compose, defina `API_PROXY_TARGET=http://localhost:8000`. No C
 
 ## Contratos
 
-`api.get<T>(path)` e `api.post<T>(path, body?)` retornam `Promise<{ data: T }>`. `data` é o JSON completo do servidor; uma resposta Laravel `{ data: ... }` está, portanto, em `response.data.data`. Exemplo:
+`api.get<T>(path)`, `api.post<T>(path, body?)`, `api.put<T>(path, body?)` e `api.delete<T>(path)` retornam `Promise<{ data: T; status: number }>`. `data` é o JSON completo do servidor; uma resposta Laravel `{ data: ... }` está, portanto, em `response.data.data`. Exemplo:
 
 ```ts
 const response = await api.get<Envelope<Session>>('/me')
@@ -34,7 +34,18 @@ O cliente envia `credentials: include`, inicializa `/sanctum/csrf-cookie` antes 
 
 `useAuthStore()` oferece `session`, `isAuthenticated`, `can(permission)`, `bootstrap()`, `refresh()`, `login(email, password)`, `startDemo()` e `logout()`. O bootstrap chama `GET /api/v1/me`. Login e demo preservam seus contratos anteriores e em seguida consultam `/me`, que fornece `{ user, organization, role, permissions, demo }`. Somente dados autenticados pelo servidor alimentam organização, papel e permissões. Nenhum token, senha ou papel é persistido em Web Storage. A senha do formulário é descartada após a tentativa.
 
-`createAppRouter(pinia, history?)` instala os guards `meta.requiresAuth` e `meta.permission`; esses guards servem à experiência, enquanto o backend impõe autorização e isolamento. A rota `/login` é pública. As rotas de negócio usam temporariamente `WorkspaceView`: esta tarefa entrega a fundação, e as tarefas 14–16 substituem essas áreas pelas telas completas.
+`createAppRouter(pinia, history?)` instala os guards `meta.requiresAuth` e `meta.permission`; esses guards servem à experiência, enquanto o backend impõe autorização e isolamento. A rota `/login` é pública. Fornecedores, dossiê, requisitos e upload têm telas reais; dashboard, análises, revisões, comparações e auditoria ainda usam `WorkspaceView` até as tarefas 15–16.
+
+### Fornecedores, requisitos e documentos
+
+- `/fornecedores`: `GET/POST /suppliers`, filtros locais por nome/identificação fiscal e risco. `/fornecedores/:id`: `GET/PUT/DELETE /suppliers/:id`. Campos: `name`, `tax_id` opcional/nulo e `risk_level` (`low`, `medium`, `high`). Exclusão exige confirmação na tela e `supplier.update`, conforme a policy existente.
+- `/requisitos`: `GET/POST /requirement-sets`, `PUT /requirement-sets/:id`, `POST /requirement-sets/:id/publish` e `POST /requirement-sets/:id/versions`. O editor envia nome e a lista completa de requisitos (código único, título, categoria, peso de 0 a 999,999, posição, critério de avaliação e obrigatoriedade). Versões publicadas aparecem somente para consulta; nova versão gera um rascunho. Publicação tem confirmação explícita e permissão própria.
+- `/fornecedores/:id/documentos`: `POST /suppliers/:id/documents` com `FormData` e campo `file`. O cliente deixa o navegador definir o boundary multipart. Seleção e drag-and-drop aceitam um PDF por envio, com extensão `.pdf`, MIME `application/pdf`, tamanho maior que zero e até 5 MiB. O servidor revalida assinatura, MIME, tamanho, contagem, quota e hash. `201` indica criação; `200` indica deduplicação, sem criar nova linha. O transporte `fetch` não fornece progresso de bytes de upload: a UI usa progresso indeterminado durante envio/validação, sem porcentagem simulada.
+- Dossiê e upload consultam `GET /suppliers/:id/documents?page=N`. Essa extensão metadata-only retorna `{ data: DocumentMetadata[], meta: { current_page, last_page, total } }`, 25 registros por página, ordenados por ID interno decrescente como critério estável (o ID interno nunca é exposto). A resolução por UUID é limitada ao tenant; `document.view` é exigida mesmo para listas vazias. Campos públicos: `id`, `storage_name`, `mime_type`, `size_bytes`, `sha256`, `status`. Sem bytes, URLs de download, nomes originais, IDs internos ou prévia executável de arquivos.
+
+`ApiError.fields` localiza os campos indicados por respostas Laravel 422, com mensagens públicas genéricas em português. Mensagens arbitrárias do servidor não são refletidas. `401` encerra a sessão local; `403`, `404`, `409`, `413`, `422` e `429` têm feedback localizado. Erros de rede/negócio exigem nova tentativa explícita; somente a renovação CSRF 419 é repetida automaticamente uma vez.
+
+As ações dependem de `supplier.create/update`, `requirement.create/update/publish` e `document.upload`; consultas dependem de `supplier.view`, `requirement.view` e `document.view`. Esconder controles e bloquear rotas é somente UX. O Laravel continua responsável por RBAC e isolamento. A demo atual usa o papel `reviewer`; ele consulta cadastros/documentos/requisitos, mas não cria fornecedores, envia arquivos nem publica requisitos. A população do template da demo pertence ao seed da jornada completa; para testar mutações, use uma sessão owner/analyst de QA com as permissões adequadas.
 
 `StatusBadge` recebe `{ status: FindingStatus }`; `FindingStatus = 'met' | 'partial' | 'missing' | 'inconclusive'`, exportado de `src/types/domain.ts`. Cada estado tem texto, ícone SVG com nome acessível e cores semânticas. Os tokens ficam em `src/styles/tokens.css` e o layout compartilhado em `src/styles/app.css`.
 

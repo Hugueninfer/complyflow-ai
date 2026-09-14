@@ -1,10 +1,14 @@
 export class ApiError extends Error {
   status: number
-  constructor(status: number) {
+  fields: Record<string, string>
+  constructor(status: number, fields: Record<string, string> = {}) {
     const messages: Record<number, string> = {
       0: 'Não foi possível conectar. Verifique sua conexão e tente novamente.',
       401: 'Sua sessão expirou. Entre novamente para continuar.',
       403: 'Sua conta não tem permissão para esta ação.',
+      404: 'Registro não encontrado ou indisponível para sua organização.',
+      409: 'Este registro foi alterado ou esta versão já existe. Atualize a página e tente novamente.',
+      413: 'O PDF excede o limite de 5 MiB por arquivo.',
       419: 'A sessão de segurança expirou. Tente novamente.',
       422: 'Verifique os dados informados e tente novamente.',
       429: 'Muitas tentativas. Aguarde um momento e tente novamente.',
@@ -12,6 +16,7 @@ export class ApiError extends Error {
     super(messages[status] ?? 'Não foi possível concluir a solicitação. Tente novamente.')
     this.name = 'ApiError'
     this.status = status
+    this.fields = fields
   }
 }
 
@@ -36,20 +41,30 @@ async function csrf() {
   if (!response.ok) throw new ApiError(response.status)
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<{ data: T }> {
+async function request<T>(method: string, path: string, body?: unknown): Promise<{ data: T; status: number }> {
   const mutation = method !== 'GET'
   if (mutation && !csrfToken()) await csrf()
   for (let attempt = 0; attempt < 2; attempt++) {
     const headers = new Headers({ Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' })
     const token = csrfToken()
     if (mutation && token) headers.set('X-XSRF-TOKEN', token)
-    if (body !== undefined) headers.set('Content-Type', 'application/json')
-    const response = await send(`/api/v1${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
+    const multipart = body instanceof FormData
+    if (body !== undefined && !multipart) headers.set('Content-Type', 'application/json')
+    const response = await send(`/api/v1${path}`, { method, headers, body: body === undefined ? undefined : multipart ? body : JSON.stringify(body) })
     if (response.status === 419 && mutation && attempt === 0) { await csrf(); continue }
     if (response.status === 401) unauthorized?.()
-    if (!response.ok) throw new ApiError(response.status)
-    if (response.status === 204) return { data: undefined as T }
-    return { data: await response.json() as T }
+    if (!response.ok) {
+      const fields: Record<string, string> = {}
+      if (response.status === 422) {
+        const payload = await response.json().catch(() => null) as { errors?: unknown } | null
+        if (payload?.errors && typeof payload.errors === 'object') {
+          for (const key of Object.keys(payload.errors)) fields[key] = 'Verifique este campo.'
+        }
+      }
+      throw new ApiError(response.status, fields)
+    }
+    if (response.status === 204) return { data: undefined as T, status: response.status }
+    return { data: await response.json() as T, status: response.status }
   }
   throw new ApiError(419)
 }
@@ -58,4 +73,6 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
   get: <T = unknown>(path: string) => request<T>('GET', path),
   post: <T = unknown>(path: string, body?: unknown) => request<T>('POST', path, body),
+  put: <T = unknown>(path: string, body?: unknown) => request<T>('PUT', path, body),
+  delete: <T = unknown>(path: string) => request<T>('DELETE', path),
 }

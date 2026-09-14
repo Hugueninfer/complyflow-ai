@@ -9,6 +9,12 @@ use App\Support\CurrentOrganization;
 
 class DocumentPolicy
 {
+    public function viewAny(User $user, Supplier $supplier): bool
+    {
+        return $supplier->organization_id === app(CurrentOrganization::class)->id()
+            && $user->hasPermission('document.view');
+    }
+
     public function create(User $user, Supplier $supplier): bool
     {
         return $supplier->organization_id === app(CurrentOrganization::class)->id()

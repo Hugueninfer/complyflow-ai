@@ -3,6 +3,26 @@ import { api } from '../api'
 import { fakeServer, json } from '../../test/server'
 
 describe('Sanctum transport', () => {
+  it('sends multipart without a JSON content type and preserves dedup HTTP status', async () => {
+    const body = new FormData()
+    body.append('file', new File(['%PDF'], 'file.pdf', { type: 'application/pdf' }))
+    fakeServer((_path, init) => {
+      expect(init.body).toBe(body)
+      expect(new Headers(init.headers).has('Content-Type')).toBe(false)
+      return json({ data: { id: 'existing' } }, 200)
+    })
+    expect(await api.post('/suppliers/id/documents', body)).toMatchObject({ status: 200, data: { data: { id: 'existing' } } })
+  })
+
+  it('supports update/delete and localizes validation fields without reflecting arbitrary server messages', async () => {
+    fakeServer((_path, init) => {
+      if (init.method === 'DELETE') return new Response(null, { status: 204 })
+      expect(init.method).toBe('PUT')
+      return json({ errors: { tax_id: ['secret database trace'], 'requirements.0.code': ['internal detail'] } }, 422)
+    })
+    await expect(api.put('/suppliers/id', {})).rejects.toMatchObject({ fields: { tax_id: 'Verifique este campo.', 'requirements.0.code': 'Verifique este campo.' } })
+    expect((await api.delete('/suppliers/id')).data).toBeUndefined()
+  })
   it('initializes CSRF, includes session cookies and sends decoded XSRF for a mutation', async () => {
     const fetcher = fakeServer((path, init) => {
       expect(path).toBe('/api/v1/login')
