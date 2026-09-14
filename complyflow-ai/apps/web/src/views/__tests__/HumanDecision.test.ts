@@ -5,7 +5,33 @@ import { openWorkspace } from '../../test/workspace'
 import { json } from '../../test/server'
 import { finding, humanReview } from '../../test/analysis'
 import { decision, decisionContext, portfolioPermissions } from '../../test/portfolio'
+import { useAuthStore } from '../../stores/auth'
 describe('Human decision journey', () => {
+  it('preserves a readonly draft when a 403 refresh omits decision context', async () => {
+    let forbidden = false, posts = 0
+    await openWorkspace('/analises/run-1/matriz', (_path, init) => {
+      if (init.method === 'POST') { forbidden = true; posts++; return json({}, 403) }
+      return json({ data: [finding], ...(forbidden ? {} : { meta: { decision_context: decisionContext } }) })
+    }, portfolioPermissions)
+    await screen.findByLabelText('Decisão final humana')
+    await fireEvent.update(screen.getByLabelText('Decisão final humana'), 'conditional')
+    await fireEvent.update(screen.getByLabelText('Justificativa da decisão'), 'Preservar decisão humana em rascunho.')
+    await fireEvent.click(screen.getByLabelText(/assumo a responsabilidade/i))
+    await fireEvent.click(screen.getByRole('button', { name: 'Registrar decisão humana' })); await flushPromises()
+    const draft = screen.getByLabelText('Justificativa da decisão')
+    expect(draft).toHaveValue('Preservar decisão humana em rascunho.')
+    expect(draft).toHaveAttribute('readonly'); expect(draft).not.toBeDisabled()
+    draft.focus(); expect(draft).toHaveFocus()
+    expect(screen.getByRole('alert')).toHaveTextContent(/permissão/i)
+    expect(screen.getByRole('button', { name: 'Registrar decisão humana' })).toBeDisabled()
+    const auth = useAuthStore()
+    auth.session!.permissions = auth.session!.permissions.filter(permission => permission !== 'supplier.decide')
+    await flushPromises()
+    expect(screen.getByLabelText('Justificativa da decisão')).toHaveValue('Preservar decisão humana em rascunho.')
+    expect(screen.getByLabelText('Justificativa da decisão')).toHaveAttribute('readonly')
+    await fireEvent.submit(screen.getByRole('form', { name: 'Registrar decisão final humana' })); await flushPromises()
+    expect(posts).toBe(1)
+  })
   it('reuses the idempotency key after an uncertain response and hides decision controls for analysts', async () => {
     const keys: string[] = []
     await openWorkspace('/analises/run-1/matriz', (_path, init) => {

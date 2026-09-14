@@ -6,17 +6,19 @@ import { useAuthStore } from '../../stores/auth'
 import type { Envelope } from '../../types/domain'
 import type { DecisionContext, HumanDecision } from '../../types/portfolio'
 import '../../styles/portfolio.css'
-const props = defineProps<{ context: DecisionContext }>()
+const props = defineProps<{ context?: DecisionContext }>()
 const emit = defineEmits<{ saved: []; conflict: [] }>()
 const auth = useAuthStore(), choice = ref(''), reason = ref(''), confirmed = ref(false), saving = ref(false), error = ref(''), blocked = ref(false), recorded = ref<HumanDecision>()
 const resultHeading = ref<HTMLElement>()
 let bodyCache = '', key = '', active = true
 const labels = { approved: 'Aprovado por decisão humana', rejected: 'Reprovado por decisão humana', conditional: 'Condicionado por decisão humana' }
-const decision = computed(() => recorded.value ?? props.context.decision)
-const eligible = computed(() => props.context.supplier_id && props.context.status === 'completed' && props.context.required_pending === 0 && props.context.is_latest_for_supplier && props.context.is_current_checklist)
+const decision = computed(() => recorded.value ?? props.context?.decision)
+const eligible = computed(() => props.context?.supplier_id && props.context.status === 'completed' && props.context.required_pending === 0 && props.context.is_latest_for_supplier && props.context.is_current_checklist)
+const hasDraft = computed(() => Boolean(choice.value || reason.value))
+const unavailable = computed(() => blocked.value || !eligible.value || !auth.can('supplier.decide'))
 const canSubmit = computed(() => auth.can('supplier.decide') && eligible.value && !decision.value && !saving.value && !blocked.value && confirmed.value && ['approved', 'rejected', 'conditional'].includes(choice.value) && reason.value.trim().length > 0 && reason.value.length <= 10000)
 async function submit() {
-  if (!canSubmit.value) return
+  if (!canSubmit.value || !props.context) return
   const body = { analysis_id: props.context.analysis_id, decision: choice.value, reason: reason.value.trim() }, encoded = JSON.stringify(body)
   if (bodyCache !== encoded) { bodyCache = encoded; key = crypto.randomUUID() }
   saving.value = true; error.value = ''
@@ -28,7 +30,7 @@ onBeforeUnmount(() => { active = false })
 </script>
 <template>
   <section
-    v-if="auth.can('supplier.decide')"
+    v-if="(auth.can('supplier.decide') && context) || hasDraft"
     class="surface-card human-decision"
     aria-label="Decisão final do fornecedor"
   >
@@ -65,16 +67,22 @@ onBeforeUnmount(() => { active = false })
       </div>
     </div>
     <p
-      v-else-if="!eligible && !blocked"
+      v-else-if="!eligible && !hasDraft"
       class="historical-note"
     >
-      Decisão indisponível: {{ context.required_pending ? `${context.required_pending} requisito(s) obrigatório(s) ainda precisam de achado e revisão humana.` : 'É necessária a análise mais recente concluída, com fornecedor ativo e checklist publicado atual.' }}
+      Decisão indisponível: {{ context?.required_pending ? `${context.required_pending} requisito(s) obrigatório(s) ainda precisam de achado e revisão humana.` : 'É necessária a análise mais recente concluída, com fornecedor ativo e checklist publicado atual.' }}
     </p>
     <form
-      v-if="(!decision && eligible) || blocked"
+      v-if="(!decision && eligible && auth.can('supplier.decide')) || (hasDraft && unavailable)"
       aria-label="Registrar decisão final humana"
       @submit.prevent="submit"
     >
+      <p
+        v-if="hasDraft && unavailable"
+        class="historical-note"
+      >
+        Rascunho não registrado · somente leitura. Copie a justificativa antes de sair desta página.
+      </p>
       <p
         v-if="error"
         class="error-notice"
@@ -84,19 +92,19 @@ onBeforeUnmount(() => { active = false })
       </p>
       <label class="form-field">Decisão final humana<select
         v-model="choice"
-        :disabled="saving || blocked"
+        :disabled="saving || unavailable"
       ><option value="">Escolha sua decisão</option><option value="approved">Aprovar</option><option value="conditional">Condicionar</option><option value="rejected">Reprovar</option></select></label>
       <label class="form-field">Justificativa da decisão<textarea
         v-model="reason"
         rows="4"
         maxlength="10000"
         required
-        :readonly="saving || blocked"
+        :readonly="saving || unavailable"
       ></textarea></label>
       <label class="decision-confirm"><input
         v-model="confirmed"
         type="checkbox"
-        :disabled="saving || blocked"
+        :disabled="saving || unavailable"
       />Assumo a responsabilidade por esta decisão humana e sua justificativa.</label>
       <button
         class="button button-primary"

@@ -112,8 +112,7 @@ onBeforeUnmount(() => { generation++; controller?.abort() })
     </section>
   </ResourceState>
   <HumanDecisionPanel
-    v-if="decisionContext"
-    :key="decisionContext.analysis_id"
+    :key="String(route.params.id)"
     :context="decisionContext"
     @saved="load(true)"
     @conflict="load(true)"

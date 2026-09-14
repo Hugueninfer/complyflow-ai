@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ShieldCheck, RefreshCw, Link2 } from '@lucide/vue'
+import { ShieldCheck, ShieldAlert, CircleHelp, CircleMinus, RefreshCw, Link2 } from '@lucide/vue'
 import { useRemoteResource } from '../composables/useRemoteResource'
 import type { AuditPage } from '../types/portfolio'
 import ResourceState from '../components/ui/ResourceState.vue'
@@ -9,6 +9,8 @@ import AuditTimeline from '../components/audit/AuditTimeline.vue'
 import '../styles/portfolio.css'
 const route = useRoute(), router = useRouter()
 const { data, loading, error, load } = useRemoteResource<AuditPage>()
+const integrity = computed(() => data.value?.meta.integrity?.status ?? 'unverifiable')
+const integritySymbols = { verified: { icon: ShieldCheck, label: 'Integridade verificada nesta página' }, broken: { icon: ShieldAlert, label: 'Quebra de integridade' }, unverifiable: { icon: CircleHelp, label: 'Verificação indisponível' }, empty: { icon: CircleMinus, label: 'Nenhum evento para verificar' } }
 const page = computed(() => { const value = Number(route.query.page); return Number.isInteger(value) && value > 0 && value <= 2147483647 ? value : 1 })
 function refresh() { void load(`/audit-logs?page=${page.value}&per_page=25`) }
 watch(page, refresh, { immediate: true })
@@ -42,12 +44,14 @@ function move(next: number) { void router.replace({ query: { page: String(next) 
     <template v-if="data">
       <section
         class="surface-card integrity-notice"
-        :class="{ broken: data.meta.integrity?.status === 'broken' }"
+        :class="integrity"
         :role="data.meta.integrity?.status === 'broken' ? 'alert' : 'status'"
       >
-        <ShieldCheck
+        <component
+          :is="integritySymbols[integrity].icon"
           :size="25"
-          aria-hidden="true"
+          role="img"
+          :aria-label="integritySymbols[integrity].label"
         /><div>
           <h2>Verificação técnica · SHA-256</h2><p v-if="data.meta.integrity?.status === 'verified'">
             Hashes e encadeamento desta página verificados.

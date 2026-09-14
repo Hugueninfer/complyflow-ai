@@ -27,7 +27,14 @@ class AuditLogController extends Controller
                 continue;
             }
             $older = $events->get($index + 1) ?? $boundary;
-            if (! hash_equals($event->event_hash, app(AuditHash::class)->make($event)) || $event->previous_hash !== $older?->event_hash) {
+            if (! hash_equals($event->event_hash, app(AuditHash::class)->make($event))) {
+                $integrity = 'broken';
+            }
+            if ($older && (! $older->organization_public_id || ! $older->event_hash)) {
+                if ($integrity !== 'broken') {
+                    $integrity = 'unverifiable';
+                }
+            } elseif ($event->previous_hash !== $older?->event_hash) {
                 $integrity = 'broken';
             }
         }
