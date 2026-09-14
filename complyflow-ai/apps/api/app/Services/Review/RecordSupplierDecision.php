@@ -24,7 +24,9 @@ class RecordSupplierDecision
     {
         return DB::transaction(function () use ($actor, $supplierId, $input, $key): SupplierDecision {
             $tenant = app(CurrentOrganization::class)->id();
-            Organization::whereKey($tenant)->lockForUpdate()->firstOrFail();
+            // Serialize tenant writers while allowing FK KEY SHARE checks by a
+            // version creator that may already hold the checklist root.
+            Organization::whereKey($tenant)->lock('for no key update')->firstOrFail();
             abort_unless(Str::isUuid($supplierId), 404);
             $supplier = Supplier::wherePublicIdForCurrentOrganization($supplierId)->lockForUpdate()->firstOrFail();
             Gate::forUser($actor)->authorize('create', SupplierDecision::class);

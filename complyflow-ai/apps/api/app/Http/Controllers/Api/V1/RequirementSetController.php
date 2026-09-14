@@ -168,7 +168,16 @@ class RequirementSetController extends Controller
     {
         $query = RequirementSet::query()->wherePublicIdForCurrentOrganization($publicId);
 
-        return ($lock ? $query->lockForUpdate() : $query)->firstOrFail();
+        $set = $query->firstOrFail();
+        if (! $lock) {
+            return $set;
+        }
+
+        // Discover ancestry without taking child locks, then acquire root -> version.
+        $root = $this->lineageRoot($set);
+        RequirementSet::forCurrentOrganization()->whereKey($root->id)->lockForUpdate()->firstOrFail();
+
+        return $query->lockForUpdate()->firstOrFail();
     }
 
     private function lineageRoot(RequirementSet $set): RequirementSet
@@ -177,7 +186,6 @@ class RequirementSetController extends Controller
             $set = RequirementSet::query()
                 ->forCurrentOrganization()
                 ->whereKey($set->parent_id)
-                ->lockForUpdate()
                 ->firstOrFail();
         }
 

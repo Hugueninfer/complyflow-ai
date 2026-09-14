@@ -21,7 +21,9 @@ class StartAnalysis
             $tenant = app(CurrentOrganization::class)->id();
             $demo = DemoSession::where('organization_id', $tenant)->lockForUpdate()->first();
             abort_if($demo?->expires_at->lessThanOrEqualTo(now()), 401, 'Demo session expired.');
-            Organization::whereKey($tenant)->lockForUpdate()->firstOrFail();
+            // Keep tenant writers serialized without blocking FK checks by a
+            // checklist version creator holding the selected checklist.
+            Organization::whereKey($tenant)->lock('for no key update')->firstOrFail();
             $supplier = Supplier::wherePublicIdForCurrentOrganization($supplier->public_id)->lockForUpdate()->firstOrFail();
             $set = RequirementSet::wherePublicIdForCurrentOrganization($setId)->where('status', 'published')->lockForUpdate()->firstOrFail();
             $requirementCount = $set->requirements()->forCurrentOrganization()->count();
