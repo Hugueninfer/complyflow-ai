@@ -38,6 +38,14 @@ Não use `request->ip()` como identificação do visitante nesse deploy: ele pod
 
 Limites de banda/build e políticas de gratuidade também se aplicam. Sem cartão, quotas esgotadas podem suspender o serviço; não considere o plano um SLA. Um job de fundo não garante que o web permaneça acordado. O filesystem não guarda uploads: binários, sessões e fila ficam no Postgres. A imagem local foi testada com 512 MiB/0,1 CPU, mas desempenho local não garante latência ou capacidade no Render. OCR desativado e concorrência mínima; use PDFs fictícios pequenos e pouco tráfego.
 
+### Cache e espaço do banco
+
+O startup coleta um lote de até 32 valores expirados do cache da aplicação; cada requisição Laravel tenta outro lote, inclusive requisições públicas e health que chegam à aplicação. Portanto não é necessário configurar cron, SSH ou one-off job para remover counters/timers abandonados pelos visitantes. Coletores concorrentes e linhas em renovação são pulados, não aguardados; o próximo request continua o trabalho. Confira os [limites e a política fail-open](security.md#retenção-do-cache-de-aplicação).
+
+Mantenha `CACHE_STORE=database`, a tabela de cache da aplicação com índice em `expiration` e um `CACHE_PREFIX` não vazio e exclusivo (padrão: nome da aplicação + `-cache-`). Não reutilize a tabela de locks como cache nem compartilhe o prefixo entre aplicações. Se configurar uma store específica em `cache.limiter`, a coleta acompanha essa store. O GC implementado é específico para PostgreSQL e não substitui retenção de demos, uploads, sessões ou backups.
+
+No painel **Logs**, repetição de `Expired application cache cleanup failed.` indica que a manutenção não está progredindo: confira disponibilidade/capacidade do Postgres, permissões de DELETE, configuração de tabela/prefixo e contenção de consultas. Não habilite debug público ou publique credenciais para investigar. O comando `php artisan cache:prune-expired` está disponível para diagnóstico local e executa um único lote; a demonstração Render não depende de executá-lo manualmente. Backlogs são drenados em requisições sucessivas; sem tráfego/startup a coleta não roda. DELETE deixa espaço reutilizável pelo PostgreSQL, mas não promete diminuir imediatamente o tamanho físico. Monitore capacidade antes de atingir 1 GB.
+
 ## Banco expirado: recriação da demo
 
 A carência permite upgrade para plano pago, não estende a demonstração gratuita operacional. Para continuar gratuitamente, será preciso excluir o banco expirado e criar outro; **isso perde todo histórico e todas as sessões**. Não faça essa operação sobre dados que precise preservar. O template de portfólio é reconstruível, as alterações feitas pelos visitantes não são um backup.

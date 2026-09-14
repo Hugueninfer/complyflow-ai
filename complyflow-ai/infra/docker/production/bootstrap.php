@@ -15,7 +15,7 @@ try {
     $db->select('SELECT pg_advisory_lock(170026, 18)');
     try {
         $db->statement('CREATE EXTENSION IF NOT EXISTS vector');
-        foreach ([['migrate', ['--force' => true]], ['db:seed', ['--force' => true]], ['demo:purge-expired', []], ['config:cache', []], ['route:cache', []], ['view:cache', []]] as [$command, $arguments]) {
+        foreach ([['migrate', ['--force' => true]], ['db:seed', ['--force' => true]], ['demo:purge-expired', []], ['cache:prune-expired', []], ['config:cache', []], ['route:cache', []], ['view:cache', []]] as [$command, $arguments]) {
             if ($kernel->call($command, $arguments) !== 0) {
                 throw new RuntimeException('Bootstrap command failed');
             }
