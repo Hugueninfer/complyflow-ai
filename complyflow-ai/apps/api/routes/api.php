@@ -42,6 +42,7 @@ Route::middleware('web')->prefix('v1')->group(function (): void {
         Route::get('/documents/{document}', [DocumentController::class, 'show']);
         Route::post('/suppliers/{supplier}/analyses', [AnalysisController::class, 'store'])->middleware('throttle:30,1');
         Route::get('/analyses/{analysis}', [AnalysisController::class, 'show']);
+        Route::post('/analyses/{analysis}/retry', [AnalysisController::class, 'retry'])->middleware('throttle:30,1');
         Route::get('/analyses/{analysis}/findings', [FindingController::class, 'index']);
         Route::post('/findings/{finding}/reviews', [FindingReviewController::class, 'store']);
         Route::post('/suppliers/{supplier}/decisions', [SupplierDecisionController::class, 'store']);

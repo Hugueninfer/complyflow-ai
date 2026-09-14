@@ -1,5 +1,8 @@
 export type FindingStatus = 'met' | 'partial' | 'missing' | 'inconclusive'
 export type Role = 'owner' | 'analyst' | 'reviewer'
+export interface AnalysisRun { id: string; status: 'pending' | 'processing' | 'completed' | 'failed'; attempts: number; progress: number; error_code: string | null; error_message: string | null; created_at: string; started_at: string | null; completed_at: string | null }
+export interface FindingReview { id: string; finding_id: string; status: FindingStatus; justification: string; note: string | null; reviewed_at: string }
+export interface Finding { id: string; requirement: { id: string; code: string; title: string; category: string; weight: number; position: number; is_required: boolean }; status: FindingStatus; justification: string; confidence: number; search_summary: string | null; requires_human_review: boolean; latest_review: FindingReview | null; review_locked: boolean; citations: { id: string; document_id: string; page_number: number; quote: string; start_offset: number; end_offset: number }[] }
 export interface DemoSession {
   id: string
   organization_id: string

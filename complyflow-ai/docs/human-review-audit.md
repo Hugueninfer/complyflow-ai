@@ -7,12 +7,16 @@ Todas as rotas abaixo usam a sessão Sanctum e a organização resolvida no serv
 `POST /api/v1/findings/{finding}/reviews`
 
 ```json
-{"status":"partial","justification":"Escopo limitado após inspeção humana.","note":"Observação opcional."}
+{"status":"partial","justification":"Escopo limitado após inspeção humana.","note":"Observação opcional.","expected_review_id":null}
 ```
 
 Enviar `Idempotency-Key` obrigatório, de 1 a 128 caracteres alfanuméricos ou `._:-`. `status` aceita `met`, `partial`, `missing`, `inconclusive`. Justificativa é obrigatória; justificativa e observação têm limite de 10.000 caracteres. A resposta `data` contém `id`, `finding_id`, `status`, `justification`, `note`, `reviewed_at`.
 
 Cada correção cria uma revisão e mantém o achado original da IA. A análise precisa estar concluída. Após sua decisão final, novas revisões nessa análise são bloqueadas. Para corrigir uma conclusão final, iniciar outra análise e revisá-la.
+
+`expected_review_id` é o UUID público da última revisão vista pelo usuário. O campo aceita `null` ou ausência somente quando não há revisão anterior. Uma versão obsoleta retorna 409 sob o mesmo lock de organização usado pela gravação. Uma repetição com chave e corpo idênticos continua retornando o registro existente antes de comparar a versão, inclusive se o cliente perdeu a resposta anterior. Correções precisam de uma nova chave e do ID atual.
+
+`GET /api/v1/analyses/{id}/findings` inclui `latest_review` (null ou os mesmos campos públicos da resposta de revisão) e `review_locked` derivado de estado não concluído/decisão final existente. O status e a justificativa no nível do achado continuam sendo os originais da IA. O frontend exige confirmação explícita de inspeção humana, renderiza notas como texto e, após 409, preserva o rascunho desabilitado para inspeção até fechar e reabrir a evidência atualizada.
 
 ## Registrar decisão final
 

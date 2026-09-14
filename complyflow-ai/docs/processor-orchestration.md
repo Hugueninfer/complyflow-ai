@@ -13,6 +13,10 @@ devem pertencer ao fornecedor. O servidor responde `202` para uma nova análise,
 `GET /api/v1/analyses/{analysis_uuid}` exige `analysis.view` e expõe estado,
 tentativas, progresso, timestamps e erros sanitizados, sem IDs internos.
 
+`POST /api/v1/analyses/{analysis_uuid}/retry` exige `analysis.run`, análise original `failed` no tenant e `Idempotency-Key` ASCII (1–128 caracteres, letras/números/`._:-`). O corpo é vazio: fornecedor, checklist publicado e documentos são resolvidos pelo servidor a partir do original. Cria outra análise com novo UUID; o estado terminal original nunca muda. A chave é prefixada internamente com o UUID de origem para isolar repetições. Mesma origem/chave retorna 200 e o mesmo novo run; criação retorna 202. Reaplica seleção de 1–10 PDFs, checklist, propriedade, limite de bytes, cotas demo e throttle. Snapshot legado sem documentos retorna 422. O fingerprint dos mesmos documentos/checklist permanece o mesmo; UUID e chave distinguem a nova execução.
+
+As rotas Vue `/analises/:id` e `/analises/:id/matriz` consomem esses contratos. A consulta começa imediatamente, mantém uma única chamada por vez, espera 2500 ms após cada resposta e para em `completed`/`failed` ou HTTP 401/403/404/422. Falhas transitórias/429 usam backoff exponencial limitado a 30 s; abas ocultas suspendem novas consultas. Navegação/desmontagem aborta o transporte e invalida respostas antigas. A linha do tempo utiliza apenas criação, início e término informados pelo servidor.
+
 O fingerprint SHA-256 inclui tenant, UUID do fornecedor, UUID e versão do
 checklist e hashes dos documentos ordenados. `analysis_runs.document_ids`
 preserva a seleção original. Uma constraint única por tenant/chave, locks de

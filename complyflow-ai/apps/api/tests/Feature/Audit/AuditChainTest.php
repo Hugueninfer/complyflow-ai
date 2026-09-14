@@ -52,8 +52,8 @@ class AuditChainTest extends ReviewTestCase
 
     public function test_chain_verifies_and_detects_tampering_with_each_signed_field(): void
     {
-        $this->review()->assertCreated();
-        $this->review('second')->assertCreated();
+        $review = $this->review()->assertCreated()->json('data.id');
+        $this->postJson($this->reviewUrl(), $this->reviewPayload() + ['expected_review_id' => $review], ['Idempotency-Key' => 'second'])->assertCreated();
         $logs = AuditLog::orderBy('id')->get();
         $this->assertNull($logs[0]->previous_hash);
         $this->assertSame($logs[0]->event_hash, $logs[1]->previous_hash);
@@ -87,8 +87,8 @@ class AuditChainTest extends ReviewTestCase
 
     public function test_audit_is_paginated_ordered_scoped_and_permission_checked(): void
     {
-        $this->review()->assertCreated();
-        $this->review('second')->assertCreated();
+        $review = $this->review()->assertCreated()->json('data.id');
+        $this->postJson($this->reviewUrl(), $this->reviewPayload() + ['expected_review_id' => $review], ['Idempotency-Key' => 'second'])->assertCreated();
         $expected = DB::table('audit_logs')->orderByDesc('id')->value('public_id');
         $this->getJson('/api/v1/audit-logs?per_page=1')->assertOk()->assertJsonPath('data.0.id', $expected)->assertJsonPath('meta.total', 2)->assertJsonPath('meta.last_page', 2)->assertJsonMissingPath('data.0.actor_id')->assertJsonMissingPath('data.0.organization_id');
         $this->getJson('/api/v1/audit-logs?per_page=101')->assertUnprocessable();

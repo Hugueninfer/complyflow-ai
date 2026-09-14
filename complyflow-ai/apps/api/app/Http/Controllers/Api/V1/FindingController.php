@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\FindingResource;
 use App\Models\AnalysisRun;
+use App\Models\FindingReview;
+use App\Models\SupplierDecision;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
@@ -27,8 +29,12 @@ class FindingController extends Controller
             ->where('d.supplier_id', $run->supplier_id)->whereIn('d.public_id', $run->document_ids ?? [])->whereColumn('p.document_id', 'd.id')
             ->whereIn('c.analysis_finding_id', $findings->pluck('id'))->orderBy('d.public_id')->orderBy('p.page_number')->orderBy('c.start_offset')->orderBy('c.end_offset')->orderBy('c.public_id')
             ->get(['c.analysis_finding_id', 'c.public_id', 'd.public_id as document_public_id', 'p.page_number', 'c.excerpt', 'c.start_offset', 'c.end_offset'])->groupBy('analysis_finding_id');
+        $reviews = FindingReview::forCurrentOrganization()->whereIn('analysis_finding_id', $findings->pluck('id'))->orderByDesc('id')->get()->unique('analysis_finding_id')->keyBy('analysis_finding_id');
+        $locked = $run->status !== 'completed' || SupplierDecision::forCurrentOrganization()->where('analysis_run_id', $run->id)->exists();
         foreach ($findings as $finding) {
             $finding->citations = $citations->get($finding->id, collect());
+            $finding->latest_review = $reviews->get($finding->id);
+            $finding->review_locked = $locked;
         }
 
         return FindingResource::collection($findings);

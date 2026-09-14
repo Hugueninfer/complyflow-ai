@@ -5,8 +5,12 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StartAnalysisRequest;
 use App\Models\AnalysisRun;
+use App\Models\RequirementSet;
+use App\Models\Supplier;
 use App\Services\Analysis\StartAnalysis;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
 class AnalysisController extends Controller
@@ -25,6 +29,25 @@ class AnalysisController extends Controller
         Gate::authorize('view', $run);
 
         return response()->json(['data' => $this->resource($run)]);
+    }
+
+    public function retry(Request $request, string $analysis)
+    {
+        abort_unless(Str::isUuid($analysis), 404);
+        $original = AnalysisRun::wherePublicIdForCurrentOrganization($analysis)->firstOrFail();
+        $supplier = Supplier::forCurrentOrganization()->whereKey($original->supplier_id)->firstOrFail();
+        Gate::authorize('create', [AnalysisRun::class, $supplier]);
+        abort_unless($original->status === 'failed', 409);
+        $key = Validator::make(['key' => $request->header('Idempotency-Key')], ['key' => ['required', 'string', 'max:128', 'regex:/^[A-Za-z0-9._:-]+$/']])->validate()['key'];
+        $set = RequirementSet::forCurrentOrganization()->whereKey($original->requirement_set_id)->firstOrFail();
+        Validator::make(['document_ids' => $original->document_ids], [
+            'document_ids' => ['required', 'array', 'min:1', 'max:10'],
+            'document_ids.*' => ['required', 'uuid', 'distinct'],
+        ])->validate();
+        // Namespace retries to their immutable source, so the original key cannot resurrect it.
+        $run = app(StartAnalysis::class)->handle($supplier, $set->public_id, $original->document_ids ?? [], 'retry:'.$original->public_id.':'.$key);
+
+        return response()->json(['data' => $this->resource($run->fresh())], $run->wasRecentlyCreated ? 202 : 200);
     }
 
     private function resource(AnalysisRun $run): array

@@ -46,16 +46,18 @@ async function csrf() {
   if (!response.ok) throw new ApiError(response.status)
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<{ data: T; status: number }> {
+export interface RequestOptions { signal?: AbortSignal; idempotencyKey?: string }
+async function request<T>(method: string, path: string, body?: unknown, options: RequestOptions = {}): Promise<{ data: T; status: number }> {
   const mutation = method !== 'GET'
   if (mutation && !csrfToken()) await csrf()
   for (let attempt = 0; attempt < 2; attempt++) {
     const headers = new Headers({ Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' })
+    if (options.idempotencyKey) headers.set('Idempotency-Key', options.idempotencyKey)
     const token = csrfToken()
     if (mutation && token) headers.set('X-XSRF-TOKEN', token)
     const multipart = body instanceof FormData
     if (body !== undefined && !multipart) headers.set('Content-Type', 'application/json')
-    const response = await send(`/api/v1${path}`, { method, headers, body: body === undefined ? undefined : multipart ? body : JSON.stringify(body) })
+    const response = await send(`/api/v1${path}`, { method, headers, signal: options.signal, body: body === undefined ? undefined : multipart ? body : JSON.stringify(body) })
     if (response.status === 419 && mutation && attempt === 0) { await csrf(); continue }
     if (response.status === 401) unauthorized?.()
     if (!response.ok) {
@@ -76,8 +78,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 // The transport wrapper mirrors axios: response.data is the complete server JSON.
 export const api = {
-  get: <T = unknown>(path: string) => request<T>('GET', path),
-  post: <T = unknown>(path: string, body?: unknown) => request<T>('POST', path, body),
+  get: <T = unknown>(path: string, options?: RequestOptions) => request<T>('GET', path, undefined, options),
+  post: <T = unknown>(path: string, body?: unknown, options?: RequestOptions) => request<T>('POST', path, body, options),
   put: <T = unknown>(path: string, body?: unknown) => request<T>('PUT', path, body),
   delete: <T = unknown>(path: string) => request<T>('DELETE', path),
 }

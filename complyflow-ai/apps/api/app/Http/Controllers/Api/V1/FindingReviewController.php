@@ -18,6 +18,7 @@ class FindingReviewController extends Controller
             'status' => ['required', 'in:met,partial,missing,inconclusive'],
             'justification' => ['required', 'string', 'max:10000'],
             'note' => ['nullable', 'string', 'max:10000'],
+            'expected_review_id' => ['nullable', 'uuid'],
         ]);
         $key = Validator::make(['key' => $request->header('Idempotency-Key')], ['key' => ['required', 'string', 'max:128', 'regex:/^[A-Za-z0-9._:-]+$/']])->validate()['key'];
         $review = $service->handle($request->user(), $finding, $input, $key);

@@ -8,6 +8,8 @@ import SuppliersView from '../views/SuppliersView.vue'
 import SupplierDetailView from '../views/SupplierDetailView.vue'
 import RequirementsView from '../views/RequirementsView.vue'
 import DocumentUploadView from '../views/DocumentUploadView.vue'
+import AnalysisProgressView from '../views/AnalysisProgressView.vue'
+import ComplianceMatrixView from '../views/ComplianceMatrixView.vue'
 
 declare module 'vue-router' {
   interface RouteMeta { requiresAuth?: boolean; title?: string; permission?: string }
@@ -23,6 +25,8 @@ export function createAppRouter(pinia: Pinia, history: RouterHistory = createWeb
       { path: '/fornecedores/:id', component: SupplierDetailView, meta: { requiresAuth: true, title: 'Dossiê do fornecedor', permission: 'supplier.view' } },
       { path: '/fornecedores/:id/documentos', component: DocumentUploadView, meta: { requiresAuth: true, title: 'Envio de documentos', permission: 'document.upload' } },
       { path: '/requisitos', component: RequirementsView, meta: { requiresAuth: true, title: 'Requisitos', permission: 'requirement.view' } },
+      { path: '/analises/:id', component: AnalysisProgressView, meta: { requiresAuth: true, title: 'Acompanhamento da análise', permission: 'analysis.view' } },
+      { path: '/analises/:id/matriz', component: ComplianceMatrixView, meta: { requiresAuth: true, title: 'Matriz de conformidade', permission: 'analysis.view' } },
       ...[
         ['/', 'Visão Geral', ''],
         ['/analises', 'Análises', 'analysis.view'],

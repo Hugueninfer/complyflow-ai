@@ -11,6 +11,28 @@ use RuntimeException;
 
 class FindingReviewTest extends ReviewTestCase
 {
+    public function test_matrix_preserves_ai_and_exposes_latest_review_and_lock(): void
+    {
+        $url = '/api/v1/analyses/'.$this->run->public_id.'/findings';
+        $this->getJson($url)->assertOk()->assertJsonPath('data.0.latest_review', null)->assertJsonPath('data.0.review_locked', false);
+        $id = $this->review()->assertCreated()->json('data.id');
+        $this->getJson($url)->assertOk()->assertJsonPath('data.0.status', 'met')->assertJsonPath('data.0.latest_review.id', $id)->assertJsonPath('data.0.latest_review.status', 'partial');
+        $this->postJson($this->decisionUrl(), $this->decisionPayload(), ['Idempotency-Key' => 'decision'])->assertCreated();
+        $this->getJson($url)->assertOk()->assertJsonPath('data.0.review_locked', true);
+    }
+
+    public function test_review_rejects_stale_or_missing_predecessor_after_first_review(): void
+    {
+        $id = $this->review()->assertCreated()->json('data.id');
+        $this->review('stale')->assertConflict();
+        $this->postJson($this->reviewUrl(), $this->reviewPayload() + ['expected_review_id' => 'invalid'], ['Idempotency-Key' => 'bad'])->assertUnprocessable();
+        $payload = $this->reviewPayload() + ['expected_review_id' => $id];
+        $next = $this->postJson($this->reviewUrl(), $payload, ['Idempotency-Key' => 'next'])->assertCreated()->json('data.id');
+        $this->postJson($this->reviewUrl(), $payload, ['Idempotency-Key' => 'next'])->assertOk()->assertJsonPath('data.id', $next);
+        $this->postJson($this->reviewUrl(), $payload, ['Idempotency-Key' => 'other'])->assertConflict();
+        $this->assertDatabaseCount('finding_reviews', 2);
+    }
+
     public function test_cannot_review_a_finding_attached_to_a_different_checklist_requirement(): void
     {
         $foreignOrganization = $this->organization();
@@ -56,7 +78,7 @@ class FindingReviewTest extends ReviewTestCase
         $id = $this->review()->assertCreated()->json('data.id');
         $this->review()->assertOk()->assertJsonPath('data.id', $id);
         $this->postJson($this->reviewUrl(), ['status' => 'missing', 'justification' => 'Changed'], ['Idempotency-Key' => 'review-1'])->assertConflict();
-        $this->postJson($this->reviewUrl(), ['status' => 'missing', 'justification' => 'Changed'], ['Idempotency-Key' => 'review-2'])->assertCreated();
+        $this->postJson($this->reviewUrl(), ['status' => 'missing', 'justification' => 'Changed', 'expected_review_id' => $id], ['Idempotency-Key' => 'review-2'])->assertCreated();
         $this->assertDatabaseCount('finding_reviews', 2);
         $this->assertDatabaseCount('audit_logs', 2);
         $this->assertDatabaseHas('finding_reviews', ['public_id' => $id, 'status' => 'partial']);

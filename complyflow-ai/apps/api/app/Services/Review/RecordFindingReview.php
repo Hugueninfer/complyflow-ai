@@ -42,6 +42,8 @@ class RecordFindingReview
             }
             abort_unless($run->status === 'completed', 409, 'Only completed analyses can be reviewed.');
             abort_if(SupplierDecision::forCurrentOrganization()->where('analysis_run_id', $run->id)->exists(), 409, 'This analysis already has a final decision.');
+            $latest = FindingReview::forCurrentOrganization()->where('analysis_finding_id', $finding->id)->orderByDesc('id')->first();
+            abort_unless(($input['expected_review_id'] ?? null) === $latest?->public_id, 409, 'A newer human review exists. Reload before reviewing.');
             $review = FindingReview::create([
                 'analysis_finding_id' => $finding->id, 'reviewer_id' => $actor->id,
                 'status' => $input['status'], 'justification' => $input['justification'], 'notes' => $input['note'] ?? null,

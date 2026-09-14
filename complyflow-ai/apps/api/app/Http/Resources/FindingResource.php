@@ -15,6 +15,12 @@ class FindingResource extends JsonResource
             'position' => $this->position, 'is_required' => (bool) $this->is_required,
         ], 'status' => $this->status, 'justification' => $this->justification, 'confidence' => (float) $this->confidence,
             'search_summary' => $this->search_summary, 'requires_human_review' => true,
+            'review_locked' => $this->review_locked,
+            'latest_review' => $this->latest_review ? [
+                'id' => $this->latest_review->public_id, 'finding_id' => $this->public_id,
+                'status' => $this->latest_review->status, 'justification' => $this->latest_review->justification,
+                'note' => $this->latest_review->notes, 'reviewed_at' => $this->latest_review->reviewed_at->toISOString(),
+            ] : null,
             'citations' => $this->citations->map(fn ($citation) => [
                 'id' => $citation->public_id, 'document_id' => $citation->document_public_id,
                 'page_number' => $citation->page_number, 'quote' => $citation->excerpt,
