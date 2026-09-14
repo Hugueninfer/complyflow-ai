@@ -5,6 +5,10 @@ import { json } from '../../test/server'
 import { openWorkspace, supplier, pdfDocument } from '../../test/workspace'
 
 describe('Supplier workspace', () => {
+  it('opens the latest completed analysis from the supplier dossier', async () => {
+    await openWorkspace(`/fornecedores/${supplier.id}`, () => json({ data: { ...supplier, latest_analysis: { id: 'run-demo', status: 'completed' } } }), ['supplier.view', 'analysis.view'])
+    expect(await screen.findByRole('link', { name: /matriz de conformidade/i })).toHaveAttribute('href', '/analises/run-demo/matriz')
+  })
   it('reconciles a supplier saved before the initial GET completes with the older server list', async () => {
     let release!: (response: Response) => void
     await openWorkspace('/fornecedores', (_path, init) => init.method === 'POST' ? json({ data: supplier }, 201) : new Promise(resolve => { release = resolve }))

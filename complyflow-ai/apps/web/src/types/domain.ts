@@ -17,7 +17,7 @@ export interface Session {
   demo: DemoSession | null
 }
 export interface Envelope<T> { data: T }
-export interface Supplier { id: string; name: string; tax_id: string | null; risk_level: 'low' | 'medium' | 'high' }
+export interface Supplier { id: string; name: string; tax_id: string | null; risk_level: 'low' | 'medium' | 'high'; latest_analysis?: Pick<AnalysisRun, 'id' | 'status'> | null }
 export interface DocumentMetadata { id: string; storage_name: string; mime_type: string; size_bytes: number; sha256: string; status: string }
 export interface DocumentPage extends Envelope<DocumentMetadata[]> { meta: { current_page: number; last_page: number; total: number } }
 export interface Requirement { id?: string; code: string; title: string; category: string; weight: number | string; position: number; evaluation_text: string; is_required: boolean }

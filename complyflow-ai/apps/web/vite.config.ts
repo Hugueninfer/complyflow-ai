@@ -6,6 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   server: {
+    allowedHosts: ['web'],
     proxy: {
       '/api': { target: process.env.API_PROXY_TARGET || 'http://api:8000', changeOrigin: true },
       '/sanctum': { target: process.env.API_PROXY_TARGET || 'http://api:8000', changeOrigin: true },

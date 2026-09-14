@@ -1,0 +1,29 @@
+[
+  {
+    "filename": "certidao-ficticia.pdf",
+    "sha256": "0de5edc89c2d92bcf01293fbb289f243f38108576093e50af982caaada4372dc",
+    "size_bytes": 2735,
+    "pages": [
+      "DOCUMENTO FICTÍCIO - SOMENTE DEMONSTRAÇÃO Material de demonstração / Sem validade comprobatória 1 / 1 01 / REGULARIDADE Declaração documental Certidão fictícia para inspeção de evidências Referência interna DEMO-DOC-01 Período ilustrativo 01/01/2026 a 31/12/2026 Escopo Cadastro documental simulado Objeto A documentação cadastral simulada está completa no período ilustrativo de 2026. Critério de leitura Esta declaração permite exercitar a localização de evidências e a revisão de um requisito documental. Não representa regularidade fiscal, trabalhista ou jurídica. Limitações Nenhum órgão público emitiu este documento. Não foram realizadas consultas a bases oficiais. Não há assinatura, registro fiscal, selo ou número de certificação válido. Todo o conteúdo é inventado para demonstração. Não usar em processos reais."
+    ],
+    "excerpt": "A documentação cadastral simulada está completa no período ilustrativo de 2026."
+  },
+  {
+    "filename": "politica-privacidade-ficticia.pdf",
+    "sha256": "589f77b8f795a3df40d5cc948f80d0e14ad77cedd9b1c4153edc75483623de9f",
+    "size_bytes": 2769,
+    "pages": [
+      "DOCUMENTO FICTÍCIO - SOMENTE DEMONSTRAÇÃO Material de demonstração / Sem validade comprobatória 1 / 1 02 / PRIVACIDADE Política de privacidade Diretrizes ilustrativas de tratamento de informações Referência interna DEMO-DOC-02 Versão ilustrativa 1.0 / setembro de 2026 Escopo Fluxo documental de demonstração Finalidade e acesso O tratamento de dados pessoais limita-se à finalidade informada e o acesso é restrito às funções autorizadas. Retenção A política prevê revisão periódica dos registros. O prazo objetivo de retenção e o procedimento de eliminação ainda não foram definidos neste exemplo. Limitações Este texto fictício é deliberadamente incompleto para permitir um achado parcial e uma revisão humana. Não constitui política de uma empresa real nem atesta conformidade com legislação. Todo o conteúdo é inventado para demonstração. Não usar em processos reais."
+    ],
+    "excerpt": "O tratamento de dados pessoais limita-se à finalidade informada e o acesso é restrito às funções autorizadas."
+  },
+  {
+    "filename": "balanco-ficticio.pdf",
+    "sha256": "8646708f744bdedb5de45c805c115e9be2a1fa170af02a7e407b59e71b00ed2f",
+    "size_bytes": 2704,
+    "pages": [
+      "DOCUMENTO FICTÍCIO - SOMENTE DEMONSTRAÇÃO Material de demonstração / Sem validade comprobatória 1 / 1 03 / FINANÇAS Resumo financeiro Balanço fictício com números ilustrativos Referência interna DEMO-DOC-03 Data-base ilustrativa 31/12/2025 Unidade Valores fictícios em R$ Posição ilustrativa Ativos: R$ 120.000. Passivos: R$ 80.000. Patrimônio líquido: R$ 40.000. Base de avaliação Os valores ilustrativos não foram auditados e não incluem notas explicativas nem projeções de liquidez. A capacidade financeira permanece inconclusiva. Limitações Não há contador, assinatura ou entidade real associada a estes números. O documento não serve para contratação, crédito, prestação de contas ou comprovação patrimonial. Todo o conteúdo é inventado para demonstração. Não usar em processos reais."
+    ],
+    "excerpt": "Os valores ilustrativos não foram auditados e não incluem notas explicativas nem projeções de liquidez. A capacidade financeira permanece inconclusiva."
+  }
+]

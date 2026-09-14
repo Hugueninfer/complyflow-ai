@@ -59,6 +59,29 @@ watch(() => route.params.id, load, { immediate: true })
           <div><span>RISCO CADASTRAL</span><strong>{{ { low: 'Baixo', medium: 'Médio', high: 'Alto' }[supplier.risk_level] }}</strong></div><div><span>IDENTIFICADOR DO FORNECEDOR</span><code>{{ supplier.id }}</code></div>
         </div>
       </section>
+      <section
+        v-if="auth.can('analysis.view')"
+        class="surface-card"
+      >
+        <h2>Análise documental</h2>
+        <template v-if="supplier.latest_analysis">
+          <p class="muted">
+            Consulte a análise mais recente deste fornecedor e inspecione as evidências antes de registrar seu parecer.
+          </p>
+          <RouterLink
+            class="button button-primary"
+            :to="`/analises/${supplier.latest_analysis.id}${supplier.latest_analysis.status === 'completed' ? '/matriz' : ''}`"
+          >
+            {{ supplier.latest_analysis.status === 'completed' ? 'Matriz de conformidade' : 'Acompanhar análise' }}
+          </RouterLink>
+        </template>
+        <p
+          v-else
+          class="muted"
+        >
+          Este fornecedor ainda não possui análise documental.
+        </p>
+      </section>
       <p
         v-if="success"
         role="status"

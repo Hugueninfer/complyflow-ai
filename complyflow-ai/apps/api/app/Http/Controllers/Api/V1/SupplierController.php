@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreSupplierRequest;
+use App\Models\AnalysisRun;
 use App\Models\DemoSession;
 use App\Models\Supplier;
 use Illuminate\Database\QueryException;
@@ -57,7 +58,13 @@ class SupplierController extends Controller
         $model = $this->resolve($supplier);
         Gate::authorize('view', $model);
 
-        return response()->json(['data' => $this->data($model)]);
+        $data = $this->data($model);
+        if (Gate::allows('viewAny', AnalysisRun::class)) {
+            $latest = AnalysisRun::forCurrentOrganization()->where('supplier_id', $model->id)->orderByDesc('created_at')->orderByDesc('id')->first();
+            $data['latest_analysis'] = $latest ? ['id' => $latest->public_id, 'status' => $latest->status] : null;
+        }
+
+        return response()->json(['data' => $data]);
     }
 
     public function update(StoreSupplierRequest $request, string $supplier): JsonResponse

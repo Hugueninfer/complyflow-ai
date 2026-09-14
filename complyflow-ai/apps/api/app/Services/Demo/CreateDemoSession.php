@@ -4,8 +4,14 @@ namespace App\Services\Demo;
 
 use App\Models\DemoSession;
 use App\Models\Organization;
+use App\Models\RequirementSet;
 use App\Models\Role;
+use App\Models\Supplier;
 use App\Models\User;
+use App\Services\Analysis\AnalysisFingerprint;
+use App\Services\Audit\AuditEvent;
+use App\Services\Audit\AuditLogger;
+use App\Support\CurrentOrganization;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -35,10 +41,17 @@ class CreateDemoSession
 
             $organization->users()->attach($user, ['role_id' => $reviewerRole->id]);
 
-            $template = Organization::query()->where('slug', self::TEMPLATE_SLUG)->first();
+            $template = Organization::query()->where('slug', self::TEMPLATE_SLUG)->sharedLock()->first();
 
             if ($template !== null) {
-                $this->cloneTemplate($template, $organization, $user);
+                $context = app(CurrentOrganization::class);
+                $previous = $context->has() ? $context->id() : null;
+                $context->set($organization);
+                try {
+                    $this->cloneTemplate($template, $organization, $user);
+                } finally {
+                    $previous === null ? $context->clear() : $context->set($previous);
+                }
             }
 
             $usage = $this->usageFor($organization);
@@ -105,6 +118,7 @@ class CreateDemoSession
         }
 
         $documentIds = [];
+        $documentPublicIds = [];
 
         foreach (DB::table('documents')->where('organization_id', $template->id)->whereNull('deleted_at')->orderBy('id')->get() as $source) {
             if (! isset($supplierIds[$source->supplier_id])) {
@@ -115,6 +129,7 @@ class CreateDemoSession
             $attributes['supplier_id'] = $supplierIds[$source->supplier_id];
             $attributes['storage_name'] = Str::uuid()->toString().$this->extension($source->storage_name);
             $documentIds[$source->id] = DB::table('documents')->insertGetId($attributes);
+            $documentPublicIds[$source->public_id] = $attributes['public_id'];
         }
 
         foreach (DB::table('document_blobs')->where('organization_id', $template->id)->orderBy('id')->get() as $source) {
@@ -160,6 +175,18 @@ class CreateDemoSession
             $attributes = $this->baseAttributes($source, $organization);
             $attributes['supplier_id'] = $supplierIds[$source->supplier_id];
             $attributes['requirement_set_id'] = $requirementSetIds[$source->requirement_set_id];
+            if ($source->document_ids !== null) {
+                $attributes['document_ids'] = json_encode(array_map(
+                    fn (string $id) => $documentPublicIds[$id] ?? throw new \RuntimeException('Demo analysis references a missing document.'),
+                    json_decode($source->document_ids, true, flags: JSON_THROW_ON_ERROR),
+                ), JSON_THROW_ON_ERROR);
+                $documents = DB::table('documents')->where('organization_id', $organization->id)->whereIn('public_id', json_decode($attributes['document_ids'], true))->get();
+                $attributes['document_set_hash'] = AnalysisFingerprint::make(Supplier::findOrFail($attributes['supplier_id']), RequirementSet::findOrFail($attributes['requirement_set_id']), $documents->pluck('sha256')->all());
+            }
+            $attributes['idempotency_key'] = 'demo-clone:'.Str::uuid();
+            $attributes['owner_message_uuid'] = null;
+            $attributes['owner_reservation_id'] = null;
+            $attributes['owner_reservation_attempt'] = null;
             $analysisRunIds[$source->id] = DB::table('analysis_runs')->insertGetId($attributes);
         }
 
@@ -200,7 +227,15 @@ class CreateDemoSession
             $attributes = $this->baseAttributes($source, $organization);
             $attributes['analysis_finding_id'] = $findingIds[$source->analysis_finding_id];
             $attributes['reviewer_id'] = $user->id;
+            $attributes['reviewed_at'] = now();
+            $attributes['idempotency_key'] = null;
+            $attributes['request_hash'] = null;
             DB::table('finding_reviews')->insert($attributes);
+            $finding = DB::table('analysis_findings')->find($attributes['analysis_finding_id']);
+            $run = DB::table('analysis_runs')->find($finding->analysis_run_id);
+            app(AuditLogger::class)->record(new AuditEvent($user, 'finding.reviewed', 'finding_review', $attributes['public_id'], [
+                'finding_id' => $finding->public_id, 'analysis_id' => $run->public_id, 'status' => $attributes['status'],
+            ]));
         }
 
         foreach (DB::table('supplier_decisions')->where('organization_id', $template->id)->orderBy('id')->get() as $source) {
@@ -218,7 +253,19 @@ class CreateDemoSession
                 ? null
                 : $analysisRunIds[$source->analysis_run_id];
             $attributes['decided_by'] = $user->id;
+            $attributes['decided_at'] = now();
+            $attributes['idempotency_key'] = null;
+            $attributes['request_hash'] = null;
             DB::table('supplier_decisions')->insert($attributes);
+            if ($attributes['analysis_run_id'] !== null) {
+                $run = DB::table('analysis_runs')->find($attributes['analysis_run_id']);
+                app(AuditLogger::class)->record(new AuditEvent($user, 'supplier.decided', 'supplier_decision', $attributes['public_id'], [
+                    'supplier_id' => DB::table('suppliers')->where('id', $attributes['supplier_id'])->value('public_id'),
+                    'analysis_id' => $run->public_id,
+                    'requirement_set_id' => DB::table('requirement_sets')->where('id', $run->requirement_set_id)->value('public_id'),
+                    'decision' => $attributes['decision'],
+                ]));
+            }
         }
     }
 
