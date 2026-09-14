@@ -39,7 +39,7 @@ def test_pipeline_revalidates_even_constructed_provider_models(change):
     from app.pipeline.analyze import AnalysisPipeline, InvalidFinding
 
     class InvalidProvider:
-        def analyze(self, requirement, contexts):
+        def analyze(self, requirement, contexts, *, budget=None):
             from app.providers.fake import FakeAIProvider
             finding = FakeAIProvider().analyze(requirement, contexts)
             if 'unexpected' in change:
@@ -54,7 +54,7 @@ def test_missing_provider_output_requires_search_record():
     from app.pipeline.analyze import AnalysisPipeline, InvalidFinding
 
     class InvalidProvider:
-        def analyze(self, requirement, contexts):
+        def analyze(self, requirement, contexts, *, budget=None):
             return FindingDraft.model_construct(
                 requirement_id=requirement.requirement_id, status='missing',
                 justification='Ausente', confidence=0.5, requires_human_review=True,
@@ -69,7 +69,7 @@ def test_rejects_exact_quote_on_real_page_outside_retrieved_contexts():
     from app.pipeline.analyze import AnalysisPipeline, InvalidCitation
 
     class UnretrievedPageProvider:
-        def analyze(self, requirement, contexts):
+        def analyze(self, requirement, contexts, *, budget=None):
             assert [item.page_number for item in contexts] == [1]
             payload = valid_response()['findings'][0]
             payload['citations'][0].update(

@@ -18,7 +18,16 @@ final readonly class SignedProcessorRequest
 
     public function send(string $url): Response
     {
-        return Http::connectTimeout(5)->timeout(60)->withoutRedirecting()->withHeaders($this->headers)
+        $budget = (float) config('services.processor.analysis_timeout_seconds');
+        $timeout = (float) config('services.processor.http_timeout_seconds');
+        // Python may only shorten its 45 s budget. Reserve 15 s for request/
+        // response transport and cleanup, then another 15 s before the 75 s job.
+        if (! is_finite($budget) || ! is_finite($timeout) || $budget <= 0 || $budget > 45
+            || $timeout < $budget + 15 || $timeout > 60) {
+            throw new ProcessorException('processor_not_configured');
+        }
+
+        return Http::connectTimeout(5)->timeout($timeout)->withoutRedirecting()->withHeaders($this->headers)
             ->withBody($this->body, 'application/json')->post($url);
     }
 }

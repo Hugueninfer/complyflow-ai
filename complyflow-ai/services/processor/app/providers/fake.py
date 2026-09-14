@@ -3,6 +3,7 @@
 import hashlib
 import json
 
+from app.execution import ExecutionBudget
 from app.providers.base import AIProvider, AnalysisContext
 from app.schemas import CitationDraft, FindingDraft, FindingStatus, RequirementDraft
 
@@ -15,7 +16,12 @@ _FIXTURES = (
 
 
 class FakeAIProvider(AIProvider):
-    def analyze(self, requirement: RequirementDraft, contexts: list[AnalysisContext]) -> FindingDraft:
+    def analyze(
+        self, requirement: RequirementDraft, contexts: list[AnalysisContext], *,
+        budget: ExecutionBudget | None = None,
+    ) -> FindingDraft:
+        if budget:
+            budget.checkpoint()
         common = dict(requirement_id=requirement.requirement_id, requires_human_review=True)
         if not contexts:
             return FindingDraft(

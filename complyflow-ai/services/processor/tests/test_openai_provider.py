@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from app.schemas import FindingDraft
+from app.execution import ExecutionBudget, ExecutionStopped
 from test_analyze_api import valid_response
 from test_fake_provider import context, requirement
 
@@ -237,3 +238,62 @@ def test_identity_response_has_equal_wire_and_decoded_byte_limits(size, accepted
     else:
         with pytest.raises(ProviderError, match='^invalid_provider_response$'):
             provider.analyze(requirement(), [context()])
+
+
+@pytest.mark.parametrize('elapsed,expected_timeout', [(0, 20), (43, 2)])
+def test_provider_caps_http_by_remaining_analysis_time(elapsed, expected_timeout):
+    from test_execution_budget import Clock
+
+    clock = Clock()
+    budget = ExecutionBudget(45, clock=clock)
+    clock.advance(elapsed)
+    timeouts = []
+
+    def response(request):
+        timeouts.append(request.extensions['timeout'])
+        return httpx.Response(200, json=envelope())
+
+    result = provider_with_response(response).analyze(requirement(), [context()], budget=budget)
+    assert result.status == 'met'
+    assert timeouts == [dict(connect=expected_timeout, read=expected_timeout, write=expected_timeout, pool=expected_timeout)]
+
+
+@pytest.mark.parametrize('stop', ['deadline', 'disconnect'])
+@pytest.mark.parametrize('phase', ['headers', 'body'])
+def test_analysis_stop_cancels_inflight_http_and_closes_resources(stop, phase):
+    budget = ExecutionBudget(0.03 if stop == 'deadline' else 5)
+    state = {'closed': False, 'exited': False}
+
+    async def block():
+        if stop == 'disconnect':
+            budget.cancel()
+        try:
+            await anyio.sleep_forever()
+        finally:
+            state['exited'] = True
+
+    class Stream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            await block()
+            yield b''
+
+        async def aclose(self):
+            state['closed'] = True
+
+    class Transport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            if phase == 'headers':
+                await block()
+            return httpx.Response(200, stream=Stream())
+
+        async def aclose(self):
+            state['closed'] = True
+
+    from app.providers.openai_compatible import OpenAICompatibleProvider
+    provider = OpenAICompatibleProvider(base_url='https://ai.example/v1', api_key='test-only', model='demo', transport=Transport())
+    started = monotonic()
+    code = 'analysis_budget_exceeded' if stop == 'deadline' else 'analysis_cancelled'
+    with pytest.raises(ExecutionStopped, match=f'^{code}$'):
+        provider.analyze(requirement(), [context()], budget=budget)
+    assert monotonic() - started < 0.5
+    assert state == {'closed': True, 'exited': True}

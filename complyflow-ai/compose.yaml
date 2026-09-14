@@ -35,6 +35,8 @@ services:
       APP_URL: http://localhost:${API_PORT:-8000}
       PROCESSOR_URL: http://processor:8001
       PROCESSOR_HMAC_SECRET: ${PROCESSOR_HMAC_SECRET:-}
+      PROCESSOR_ANALYSIS_TIMEOUT_SECONDS: ${PROCESSOR_ANALYSIS_TIMEOUT_SECONDS:-45}
+      PROCESSOR_HTTP_TIMEOUT_SECONDS: ${PROCESSOR_HTTP_TIMEOUT_SECONDS:-60}
       DB_CONNECTION: pgsql
       DB_HOST: postgres
       DB_PORT: 5432
@@ -73,6 +75,8 @@ services:
       APP_ENV: local
       PROCESSOR_URL: http://processor:8001
       PROCESSOR_HMAC_SECRET: ${PROCESSOR_HMAC_SECRET:-}
+      PROCESSOR_ANALYSIS_TIMEOUT_SECONDS: ${PROCESSOR_ANALYSIS_TIMEOUT_SECONDS:-45}
+      PROCESSOR_HTTP_TIMEOUT_SECONDS: ${PROCESSOR_HTTP_TIMEOUT_SECONDS:-60}
       DB_CONNECTION: pgsql
       DB_HOST: postgres
       DB_PORT: 5432
@@ -104,6 +108,7 @@ services:
     working_dir: /workspace/services/processor
     environment:
       PROCESSOR_HMAC_SECRET: ${PROCESSOR_HMAC_SECRET:-}
+      PROCESSOR_ANALYSIS_TIMEOUT_SECONDS: ${PROCESSOR_ANALYSIS_TIMEOUT_SECONDS:-45}
     command: uvicorn app.main:app --host=0.0.0.0 --port=8001 --reload
     ports:
       - "${PROCESSOR_PORT:-8001}:8001"

@@ -17,6 +17,8 @@ from time import monotonic
 
 from pypdf import PdfReader
 
+from app.execution import ExecutionBudget
+
 
 MAX_PDF_BYTES = 5 * 1024 * 1024
 MAX_PAGES = 200
@@ -237,15 +239,20 @@ def _extract_worker(
             pass
 
 
-def _read_exact_until(reader_fd: int, size: int, deadline: float) -> bytes:
+def _read_exact_until(
+    reader_fd: int, size: int, deadline: float, budget: ExecutionBudget | None = None,
+) -> bytes:
     output = bytearray()
     while len(output) < size:
+        if budget:
+            budget.checkpoint()
         remaining = deadline - monotonic()
         if remaining <= 0:
             raise TimeoutError
-        readable, _, _ = select.select((reader_fd,), (), (), remaining)
+        # Poll the cooperative token even when a parser/descendant never writes.
+        readable, _, _ = select.select((reader_fd,), (), (), min(remaining, 0.05) if budget else remaining)
         if not readable:
-            raise TimeoutError
+            continue
         try:
             chunk = os.read(reader_fd, min(64 * 1024, size - len(output)))
         except BlockingIOError:
@@ -256,13 +263,17 @@ def _read_exact_until(reader_fd: int, size: int, deadline: float) -> bytes:
     return bytes(output)
 
 
-def _receive_result(reader_fd: int, deadline: float) -> list[ExtractedPage]:
+def _receive_result(
+    reader_fd: int, deadline: float, *, budget: ExecutionBudget | None = None,
+) -> list[ExtractedPage]:
     os.set_blocking(reader_fd, False)
-    payload_size = struct.unpack("!I", _read_exact_until(reader_fd, 4, deadline))[0]
+    payload_size = struct.unpack("!I", _read_exact_until(reader_fd, 4, deadline, budget))[0]
     if payload_size == 0 or payload_size > MAX_IPC_PAYLOAD_BYTES:
         raise ValueError
-    raw_payload = _read_exact_until(reader_fd, payload_size, deadline)
+    raw_payload = _read_exact_until(reader_fd, payload_size, deadline, budget)
     message = json.loads(raw_payload)
+    if budget:
+        budget.checkpoint()
     if not isinstance(message, dict) or message.get("status") not in {"ok", "error"}:
         raise ValueError
     if message["status"] == "error":
@@ -277,6 +288,8 @@ def _receive_result(reader_fd: int, deadline: float) -> list[ExtractedPage]:
     pages: list[ExtractedPage] = []
     total_chars = 0
     for raw_page in raw_pages:
+        if budget:
+            budget.checkpoint()
         if not isinstance(raw_page, dict) or set(raw_page) != {
             "number",
             "text",
@@ -315,14 +328,19 @@ def extract_pages(
     data: bytes,
     *,
     ocr_engine: OcrEngine | None = None,
+    budget: ExecutionBudget | None = None,
 ) -> list[ExtractedPage]:
     """Extract pages in a Linux child process with strict resource budgets."""
 
+    if budget:
+        budget.checkpoint()
     if not isinstance(data, bytes) or not data or not data.startswith(b"%PDF-"):
         raise PdfExtractionError("invalid_pdf")
     if len(data) > MAX_PDF_BYTES:
         raise PdfExtractionError("pdf_limit_exceeded")
 
+    timeout = budget.remaining(PROCESS_TIMEOUT_SECONDS) if budget else PROCESS_TIMEOUT_SECONDS
+    deadline = monotonic() + timeout
     context = get_context("fork")
     reader_fd, writer_fd = os.pipe()
     process = context.Process(
@@ -332,12 +350,11 @@ def extract_pages(
     )
     result = None
     process_error = None
-    deadline = monotonic() + PROCESS_TIMEOUT_SECONDS
     try:
         process.start()
         os.close(writer_fd)
         writer_fd = -1
-        result = _receive_result(reader_fd, deadline)
+        result = _receive_result(reader_fd, deadline, budget=budget)
     except PdfExtractionError as error:
         process_error = str(error)
     except (EOFError, OSError, TimeoutError, TypeError, ValueError):
@@ -355,6 +372,8 @@ def extract_pages(
                 pass
         process.close()
 
+    if budget:
+        budget.checkpoint()
     if process_error is not None:
         raise PdfExtractionError(process_error) from None
     return result

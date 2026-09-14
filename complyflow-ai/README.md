@@ -71,6 +71,7 @@ Para parar: `docker compose down`. Para apagar os dados locais de desenvolviment
 - UUIDs públicos, escopo obrigatório por organização, policies e RBAC no servidor; testes de IDOR entre organizações e demos.
 - Cookies de sessão e CSRF na mesma origem. Em produção: cookies Secure/HttpOnly, CSP e cabeçalhos defensivos; segredos gerados por ambiente.
 - Upload limitado a PDF de 5 MiB, hash/deduplicação, cotas, extração com limites de tempo/memória e conteúdo tratado como não confiável.
+- Análise com orçamento total de 45 s e cancelamento cooperativo; uma execução ativa por processo, sem sobreposição de retries. [Configuração de prazos e limites](docs/processor-orchestration.md).
 - Achados aceitos somente com schema, página, trecho e offsets coerentes; `missing` exige descrição da busca. A IA nunca aprova ou reprova fornecedores.
 - Revisões, decisões e auditoria append-only; encadeamento de hashes detecta alterações locais, com os limites explicitados na interface.
 

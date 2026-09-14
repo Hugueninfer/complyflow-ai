@@ -4,10 +4,11 @@ import json
 from time import monotonic
 from urllib.parse import urlsplit
 
-import httpx
 import anyio
+import httpx
 from pydantic import ValidationError
 
+from app.execution import ExecutionBudget
 from app.providers.base import AIProvider, AnalysisContext, ProviderError
 from app.schemas import FindingDraft, RequirementDraft
 
@@ -50,7 +51,12 @@ class OpenAICompatibleProvider(AIProvider):
         self.url = base_url.rstrip('/') + '/chat/completions'
         self.api_key, self.model, self.transport = api_key, model, transport
 
-    def analyze(self, requirement: RequirementDraft, contexts: list[AnalysisContext]) -> FindingDraft:
+    def analyze(
+        self, requirement: RequirementDraft, contexts: list[AnalysisContext], *,
+        budget: ExecutionBudget | None = None,
+    ) -> FindingDraft:
+        if budget:
+            budget.checkpoint()
         user = (
             '<requirement>' + _delimited_json(requirement.model_dump(mode='json')) + '</requirement>\n'
             '<untrusted_document_contexts>'
@@ -67,7 +73,7 @@ class OpenAICompatibleProvider(AIProvider):
         # The pipeline's public contract is synchronous and runs in FastAPI's
         # worker thread. Cancellable async I/O enforces a total HTTP deadline,
         # including connection, response headers and a stalled/slow-drip body.
-        raw = anyio.run(self._request, payload)
+        raw = anyio.run(self._request, payload, budget)
         try:
             result = json.loads(raw)
             choices = result['choices']
@@ -81,33 +87,62 @@ class OpenAICompatibleProvider(AIProvider):
                 raise ValueError
         except (ValueError, TypeError, KeyError, IndexError, AttributeError, ValidationError):
             raise ProviderError('invalid_provider_response') from None
+        if budget:
+            budget.checkpoint()
         return finding
 
-    async def _request(self, payload: dict) -> bytes:
-        deadline = monotonic() + PROVIDER_TIMEOUT_SECONDS
+    async def _request(self, payload: dict, budget: ExecutionBudget | None = None) -> bytes:
+        timeout = budget.remaining(PROVIDER_TIMEOUT_SECONDS) if budget else PROVIDER_TIMEOUT_SECONDS
+        deadline = monotonic() + timeout
+        failure = None
+        raw = b''
         try:
-            with anyio.fail_after(PROVIDER_TIMEOUT_SECONDS):
-                async with httpx.AsyncClient(
-                    timeout=PROVIDER_TIMEOUT_SECONDS, follow_redirects=False, trust_env=False,
-                    transport=self.transport,
-                ) as client:
-                    async with client.stream('POST', self.url, json=payload, headers={
-                        'Authorization': 'Bearer ' + self.api_key,
-                        'Accept-Encoding': 'identity',
-                    }) as response:
-                        response.raise_for_status()
-                        # Refuse compression before any body iteration invokes a
-                        # decoder. With identity, wire and decoded bytes coincide.
-                        encoding = response.headers.get('Content-Encoding', 'identity')
-                        if encoding.strip().lower() != 'identity':
-                            raise ProviderError('invalid_provider_response')
-                        raw = bytearray()
-                        async for chunk in response.aiter_bytes():
-                            if monotonic() > deadline:
-                                raise ProviderError('provider_unavailable')
-                            if len(raw) + len(chunk) > MAX_RESPONSE_BYTES:
-                                raise ProviderError('invalid_provider_response')
-                            raw.extend(chunk)
-                        return bytes(raw)
+            with anyio.move_on_after(timeout) as scope:
+                async with anyio.create_task_group() as watchers:
+                    if budget:
+                        watchers.start_soon(self._watch_cancellation, budget, scope)
+                    try:
+                        raw = await self._read_response(payload, timeout, deadline, budget)
+                    except Exception as error:
+                        # Preserve the public exception type across the task group.
+                        failure = error
+                    finally:
+                        watchers.cancel_scope.cancel()
+            if budget:
+                budget.checkpoint()
+            if scope.cancel_called:
+                raise ProviderError('provider_unavailable')
+            if failure is not None:
+                raise failure
+            return raw
         except (httpx.HTTPError, TimeoutError):
             raise ProviderError('provider_unavailable') from None
+
+    async def _watch_cancellation(self, budget: ExecutionBudget, scope) -> None:
+        while not budget.cancelled:
+            await anyio.sleep(0.05)
+        scope.cancel()
+
+    async def _read_response(self, payload, timeout, deadline, budget) -> bytes:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=False, trust_env=False, transport=self.transport,
+        ) as client:
+            async with client.stream('POST', self.url, json=payload, headers={
+                'Authorization': 'Bearer ' + self.api_key,
+                'Accept-Encoding': 'identity',
+            }) as response:
+                response.raise_for_status()
+                # Reject compression before a decoder can allocate an expanded body.
+                encoding = response.headers.get('Content-Encoding', 'identity')
+                if encoding.strip().lower() != 'identity':
+                    raise ProviderError('invalid_provider_response')
+                raw = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if budget:
+                        budget.checkpoint()
+                    if monotonic() > deadline:
+                        raise ProviderError('provider_unavailable')
+                    if len(raw) + len(chunk) > MAX_RESPONSE_BYTES:
+                        raise ProviderError('invalid_provider_response')
+                    raw.extend(chunk)
+                return bytes(raw)

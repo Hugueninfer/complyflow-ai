@@ -5,9 +5,11 @@ import binascii
 import hashlib
 import os
 from dataclasses import asdict
+from time import monotonic
 
 from pydantic import ValidationError
 
+from app.execution import ExecutionBudget
 from app.pdf.chunker import chunk_pages
 from app.pdf.extractor import MAX_PDF_BYTES, extract_pages
 from app.providers.base import AIProvider, AnalysisContext, ProviderError
@@ -74,7 +76,9 @@ class AnalysisPipeline:
                 raise InvalidCitation('invalid_citation')
         return finding
 
-    def run(self, request: AnalyzeRequest) -> AnalyzeResponse:
+    def run(self, request: AnalyzeRequest, *, budget: ExecutionBudget | None = None) -> AnalyzeResponse:
+        budget = budget or ExecutionBudget.from_settings(clock=monotonic)
+        budget.checkpoint()
         if len(request.documents) > MAX_DOCUMENTS or len(request.requirements) > MAX_REQUIREMENTS:
             raise AnalysisError('analysis_limit_exceeded')
         for identifiers in (
@@ -87,6 +91,7 @@ class AnalysisPipeline:
         documents, contexts, embeddings = [], [], []
         total_bytes = 0
         for document in request.documents:
+            budget.checkpoint()
             if len(document.content_base64) > 4 * ((MAX_PDF_BYTES + 2) // 3):
                 raise AnalysisError('analysis_limit_exceeded')
             try:
@@ -98,17 +103,22 @@ class AnalysisPipeline:
                 raise AnalysisError('analysis_limit_exceeded')
             if hashlib.sha256(content).hexdigest() != document.sha256:
                 raise AnalysisError('document_hash_mismatch')
-            pages = extract_pages(content)
-            chunks = chunk_pages(pages)
+            budget.checkpoint()
+            pages = extract_pages(content, budget=budget)
+            budget.checkpoint()
+            chunks = chunk_pages(pages, budget=budget)
+            budget.checkpoint()
             if len(contexts) + len(chunks) > MAX_CHUNKS:
                 raise AnalysisError('analysis_limit_exceeded')
             # Scan whole pages so an instruction split across chunks stays flagged.
-            signals = {page.number: scan_untrusted_text(page.text).signals for page in pages}
+            signals = {page.number: scan_untrusted_text(page.text, budget=budget).signals for page in pages}
             drafts = []
             for chunk in chunks:
+                budget.checkpoint()
                 if not chunk.text.strip():
                     continue
-                embedding = embed_text(chunk.text)
+                embedding = embed_text(chunk.text, budget=budget)
+                budget.checkpoint()
                 drafts.append(ChunkDraft(**asdict(chunk), embedding=embedding))
                 contexts.append(AnalysisContext(
                     document_id=document.document_id, **asdict(chunk), signals=signals[chunk.page_number],
@@ -120,11 +130,17 @@ class AnalysisPipeline:
                 chunks=drafts,
             ))
 
-        retriever = HybridRetriever(contexts, embeddings)
+        budget.checkpoint()
+        retriever = HybridRetriever(contexts, embeddings, budget=budget)
+        budget.checkpoint()
         findings = []
         for requirement in request.requirements:
-            selected = retriever.search(requirement.criterion + ' ' + requirement.evaluation_text)
-            finding = self.validate_finding(self.provider.analyze(requirement, selected), documents)
+            budget.checkpoint()
+            selected = retriever.search(requirement.criterion + ' ' + requirement.evaluation_text, budget=budget)
+            budget.checkpoint()
+            draft = self.provider.analyze(requirement, selected, budget=budget)
+            budget.checkpoint()
+            finding = self.validate_finding(draft, documents)
             if finding.requirement_id != requirement.requirement_id:
                 raise InvalidFinding('invalid_finding')
             for citation in finding.citations:
@@ -136,4 +152,6 @@ class AnalysisPipeline:
                 ):
                     raise InvalidCitation('invalid_citation')
             findings.append(finding)
-        return AnalyzeResponse(analysis_id=request.analysis_id, findings=findings, processed_documents=documents)
+        result = AnalyzeResponse(analysis_id=request.analysis_id, findings=findings, processed_documents=documents)
+        budget.checkpoint()
+        return result

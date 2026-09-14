@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from uuid import UUID
 
+from app.execution import ExecutionBudget
 from app.schemas import ContractModel, FindingDraft, NonBlank, Offset, PageNumber, RequirementDraft
 
 
@@ -22,6 +23,9 @@ class AnalysisContext(ContractModel):
 
 class AIProvider(ABC):
     @abstractmethod
-    def analyze(self, requirement: RequirementDraft, contexts: list[AnalysisContext]) -> FindingDraft:
+    def analyze(
+        self, requirement: RequirementDraft, contexts: list[AnalysisContext], *,
+        budget: ExecutionBudget | None = None,
+    ) -> FindingDraft:
         """Suggest a finding; approval/decision is outside this interface."""
         raise NotImplementedError

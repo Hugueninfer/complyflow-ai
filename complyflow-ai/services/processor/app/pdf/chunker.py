@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Iterable
 
+from app.execution import ExecutionBudget
 from app.pdf.extractor import ExtractedPage
 
 
@@ -23,6 +24,8 @@ def chunk_pages(
     pages: Iterable[ExtractedPage],
     max_chars: int = 1200,
     overlap: int = 150,
+    *,
+    budget: ExecutionBudget | None = None,
 ) -> list[Chunk]:
     """Split normalized pages into exact slices; a chunk never spans pages."""
 
@@ -37,7 +40,11 @@ def chunk_pages(
     ):
         raise ChunkingError("invalid_chunk_configuration")
 
-    page_list = list(pages)
+    page_list = []
+    for page in pages:
+        if budget:
+            budget.checkpoint()
+        page_list.append(page)
     page_numbers = [page.number for page in page_list]
     if any(
         isinstance(number, bool) or not isinstance(number, int) or number < 1
@@ -50,6 +57,8 @@ def chunk_pages(
     for page in page_list:
         start = 0
         while start < len(page.text):
+            if budget:
+                budget.checkpoint()
             end = min(start + max_chars, len(page.text))
             chunks.append(
                 Chunk(

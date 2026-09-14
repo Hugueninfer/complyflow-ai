@@ -69,4 +69,27 @@ Responses have these stable shapes:
   full nonce cache; provider/configuration failures use sanitized public codes
   such as `provider_not_configured`, `provider_unavailable` or `analysis_failed`.
 
+Every attempt shares one absolute monotonic deadline, including all documents,
+retrieval, requirement calls and response serialization. Configure
+`PROCESSOR_ANALYSIS_TIMEOUT_SECONDS` identically in Laravel and Python:
+default 45 seconds, finite and strictly positive, with a maximum of 45.
+PDF extraction is capped at `min(30, remaining)` seconds and each provider
+HTTP operation at `min(20, remaining)` seconds. Laravel's
+`PROCESSOR_HTTP_TIMEOUT_SECONDS` defaults to 60, must be at least 15 seconds
+above the shared budget and at most 60 (before the 75-second queue job timeout).
+The cross-language contract check verifies these effective relationships.
+
+503 `analysis_budget_exceeded`, `analysis_cancelled`, `analysis_in_progress`
+and `analysis_capacity_exceeded` are retryable. `analysis_not_configured`
+signals invalid time configuration and is terminal in Laravel. Disconnect
+and ASGI task cancellation propagate a cooperative cancellation token to CPU
+loops, the PDF pipe/child cleanup and cancellable HTTP I/O. No partial result
+is returned for persistence. At most **one analysis** runs in this process,
+including cleanup: duplicate analysis IDs or idempotency-key hashes are
+rejected without starting another pipeline. Other work is rejected at capacity.
+The active entry is released by the worker in `finally`, never by expiration
+or merely because its HTTP waiter ended. This bounded registry stores no
+results or completed-key history. It resets on restart and cannot coordinate
+multiple processes; Laravel owns durable idempotency and terminal states.
+
 Neither request bodies nor secrets are logged by these handlers.

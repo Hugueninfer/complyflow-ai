@@ -30,13 +30,57 @@ compartilhado entre API, worker e processador. O Compose fornece a mesma
 variável aos três serviços; não há segredo padrão. Fora do Compose, configure
 também `PROCESSOR_URL`. Nunca exponha esse segredo ao navegador.
 
-O job usa lock `WithoutOverlapping`, timeout de 75 s, lock com expiração de
-85 s e `retry_after` da fila de 90 s. O HTTP possui conexão de 5 s e timeout de
-60 s, sem redirects. Há quatro tentativas com backoff de 10, 30 e 90 s;
-cada chamada recebe nonce novo. Erros de conexão, 408, 429 e 5xx são
-retentáveis; `provider_not_configured`, outros 4xx e resposta inválida são
-terminais. Um timeout do worker falha de forma terminal. Mensagens remotas e
-exceções com conteúdo de documentos não são propagadas ao erro público.
+O orçamento absoluto `PROCESSOR_ANALYSIS_TIMEOUT_SECONDS` é **45 s** por
+requisição, medido por relógio monotônico desde a entrada na rota Python.
+Inclui recebimento/autenticação, validação, extração de todos os PDFs, chunks,
+vetores, recuperação, todas as chamadas ao provedor e serialização da resposta.
+O processo PDF recebe `min(30 s, restante)`; cada chamada ao provedor recebe
+`min(20 s, restante)`, incluindo conexão, headers e corpo lento. Os laços de
+preparação/recuperação verificam o mesmo token cooperativo. Um novo requisito
+ou PDF não reinicia o prazo. O fake permanece determinístico, local e sem rede.
+
+O prazo global pode ser reduzido, mas deve ser finito, positivo e no máximo
+45 s. `PROCESSOR_HTTP_TIMEOUT_SECONDS` configura o transporte Laravel: padrão
+60 s, no máximo 60 s e pelo menos **15 s acima** do orçamento Python. Configure
+o mesmo orçamento na API, worker Laravel e processador; Compose o compartilha
+e a imagem de produção define os dois padrões. Configuração incoerente falha
+antes do envio; configuração Python inválida retorna `analysis_not_configured`.
+
+| Limite | Padrão |
+| --- | --- |
+| Requisição completa no Python | 45 s |
+| HTTP Laravel (conexão até 5 s, sem redirects) | 60 s |
+| `ProcessAnalysis` | 75 s |
+| Lock `WithoutOverlapping` | 85 s |
+| `retry_after` database | 90 s local; 120 s na produção |
+
+Ao esgotar o orçamento, Python responde 503 com `analysis_budget_exceeded`,
+antes do timeout do cliente. A rota acompanha `http.disconnect` e cancelamento
+da tarefa ASGI, sinalizando o token usado pelo worker. Esperas de pipe/HTTP
+verificam cancelamento em até 50 ms de execução do escalonador; o subprocesso
+PDF e seus descendentes são terminados/recolhidos, e o cliente HTTP é fechado.
+São limites cooperativos de aplicação, sujeitos à disponibilidade de CPU e ao
+tempo de liberação de recursos, não garantias de tempo real sob saturação.
+
+Para o runtime de 512 MiB/0,1 CPU há **uma análise ativa por processo**, sem fila
+interna. Um registro atômico rejeita o mesmo UUID ou hash de chave com 503
+`analysis_in_progress`; outra análise durante ocupação recebe 503
+`analysis_capacity_exceeded`. A entrada é liberada em `finally` pelo worker
+somente quando ele sai, inclusive após erro/cancelamento e serialização. O
+término do HTTP não libera trabalho ainda ativo para um retry. Não há cache
+de respostas, histórico de chaves nem lease com TTL que expire durante trabalho.
+O registro guarda no máximo uma entrada e some no reinício; não fornece
+idempotência durável. Use um único processo/worker Python: múltiplas réplicas
+exigem coordenação compartilhada tanto de execuções quanto dos nonces HMAC.
+
+Há quatro tentativas com backoff de 10, 30 e 90 s; cada chamada recebe nonce
+novo. Esgotamento, ocupação, conexão, 408, 429 e 5xx são retentáveis;
+`provider_not_configured`, `analysis_not_configured`, outros 4xx e resposta
+inválida são terminais. Um timeout do worker Laravel falha de forma terminal.
+Os limites de 100 requisitos/10 PDFs não garantem conclusão em 45 s: um
+conjunto ou provedor lento pode esgotar todas as tentativas, exigindo menor
+escopo ou mudança operacional. Não são persistidos resultados parciais.
+Mensagens remotas e exceções com conteúdo documental não são propagadas.
 
 Cada tentativa registra o UUID da mensagem, o ID da reserva na fila database
 e seu número de tentativa. O callback `failed()` só finaliza a reserva
@@ -115,5 +159,6 @@ O teste entre linguagens usa a fixture canônica imutável
 `services/processor/openapi/hmac-test-vector.json`. PHP assina seus bytes e
 emite os bytes/headers do transporte HTTP Laravel; Python os submete ao
 autenticador HMAC e ao schema real via FastAPI TestClient, com relógio fixado,
-verificando também replay. Somente o pipeline de extração é substituído, pois
+verificando também replay e a relação entre os prazos efetivos de ambos os
+processos, job e lock. Somente o pipeline de extração é substituído, pois
 o PDF da fixture contém apenas um cabeçalho e não é um PDF completo.

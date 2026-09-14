@@ -18,6 +18,7 @@ from app.pdf.extractor import (
     PdfExtractionError,
     extract_pages,
 )
+from app.execution import ExecutionBudget, ExecutionStopped
 
 
 FIXTURE = Path(__file__).parent / "fixtures/two-pages.pdf"
@@ -268,3 +269,91 @@ def test_partial_ipc_frame_with_inherited_writer_respects_deadline_and_cleans_gr
 def test_fixture_really_has_two_distinct_pdf_pages():
     reader = PdfReader(FIXTURE)
     assert len(reader.pages) == 2
+
+
+@pytest.mark.parametrize('elapsed,expected_deadline', [(0, 30), (44, 45)])
+def test_pdf_receives_the_smaller_of_operation_limit_and_remaining_analysis(monkeypatch, elapsed, expected_deadline):
+    from app.pdf import extractor
+    from test_execution_budget import Clock
+
+    clock = Clock()
+    monkeypatch.setattr(extractor, 'monotonic', clock)
+    budget = ExecutionBudget(45, clock=clock)
+    clock.advance(elapsed)
+    deadlines = []
+
+    def receive(reader_fd, deadline, **kwargs):
+        deadlines.append(deadline)
+        return []
+
+    monkeypatch.setattr(extractor, '_receive_result', receive)
+    assert extract_pages(FIXTURE.read_bytes(), budget=budget) == []
+    assert deadlines == [expected_deadline]
+
+
+def test_disconnect_interrupts_blocked_pdf_pipe_and_reaps_child(monkeypatch):
+    from app.pdf import extractor
+
+    budget = ExecutionBudget(45)
+    children = []
+    original_stop = extractor._stop_process
+
+    def stop(process):
+        original_stop(process)
+        children.append(process.is_alive())
+
+    def disconnect(readers, writers, errors, timeout):
+        assert timeout <= 0.1
+        budget.cancel()
+        return [], [], []
+
+    monkeypatch.setattr(extractor, '_stop_process', stop)
+    monkeypatch.setattr(extractor.select, 'select', disconnect)
+    with pytest.raises(ExecutionStopped, match='^analysis_cancelled$'):
+        extract_pages(FIXTURE.read_bytes(), budget=budget)
+    assert children == [False]
+
+
+def test_pdf_global_timeout_is_retryable_and_reaps_child(monkeypatch):
+    from app.pdf import extractor
+    from test_execution_budget import Clock
+
+    clock = Clock()
+    budget = ExecutionBudget(0.5, clock=clock)
+    monkeypatch.setattr(extractor, 'monotonic', clock)
+
+    def timeout(*args):
+        clock.advance(0.5)
+        return [], [], []
+
+    monkeypatch.setattr(extractor.select, 'select', timeout)
+    with pytest.raises(ExecutionStopped, match='^analysis_budget_exceeded$'):
+        extract_pages(FIXTURE.read_bytes(), budget=budget)
+
+
+def test_expiration_before_fork_does_not_leak_pipe_descriptors(monkeypatch):
+    from app.pdf import extractor
+
+    times = iter([0, 0.5, 1])
+    budget = ExecutionBudget(1, clock=lambda: next(times))
+    original_pipe = os.pipe
+    opened = []
+
+    def pipe():
+        descriptors = original_pipe()
+        opened.extend(descriptors)
+        return descriptors
+
+    monkeypatch.setattr(extractor.os, 'pipe', pipe)
+    try:
+        with pytest.raises(ExecutionStopped, match='^analysis_budget_exceeded$'):
+            extract_pages(FIXTURE.read_bytes(), budget=budget)
+        for descriptor in opened:
+            with pytest.raises(OSError):
+                os.fstat(descriptor)
+    finally:
+        for descriptor in opened:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass

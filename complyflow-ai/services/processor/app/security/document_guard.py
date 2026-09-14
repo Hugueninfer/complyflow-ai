@@ -3,6 +3,7 @@
 import re
 from dataclasses import dataclass
 
+from app.execution import ExecutionBudget
 
 @dataclass(frozen=True, slots=True)
 class GuardResult:
@@ -70,10 +71,17 @@ _SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
-def scan_untrusted_text(text: str) -> GuardResult:
+def scan_untrusted_text(text: str, *, budget: ExecutionBudget | None = None) -> GuardResult:
     """Return deterministic signals; never execute, transform, or redact input."""
 
     if not isinstance(text, str):
         raise TypeError("text must be a string")
-    signals = [name for name, pattern in _SIGNAL_PATTERNS if pattern.search(text)]
+    signals = []
+    for name, pattern in _SIGNAL_PATTERNS:
+        if budget:
+            budget.checkpoint()
+        if pattern.search(text):
+            signals.append(name)
+    if budget:
+        budget.checkpoint()
     return GuardResult(suspicious=bool(signals), signals=signals)

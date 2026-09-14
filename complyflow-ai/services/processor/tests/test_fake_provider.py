@@ -41,6 +41,16 @@ def test_fake_provider_is_deterministic_without_network(monkeypatch):
     assert 'demonstração' in first.justification.lower()
 
 
+def test_fake_provider_observes_cancellation_before_generating_a_finding():
+    from app.execution import ExecutionBudget, ExecutionStopped
+    from app.providers.fake import FakeAIProvider
+
+    budget = ExecutionBudget(45)
+    budget.cancel()
+    with pytest.raises(ExecutionStopped, match='^analysis_cancelled$'):
+        FakeAIProvider().analyze(requirement(), [context()], budget=budget)
+
+
 def test_fake_hash_selects_reproducible_demo_fixtures():
     from app.providers.fake import FakeAIProvider
 

@@ -13,10 +13,88 @@ use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 
 class ProcessAnalysisTest extends AnalysisTestCase
 {
+    public function test_http_timeout_uses_configured_budget_margin_and_finishes_before_job_and_lock(): void
+    {
+        config(['services.processor.analysis_timeout_seconds' => 30, 'services.processor.http_timeout_seconds' => 50]);
+        $id = $this->start()->assertStatus(202)->json('data.id');
+        $run = AnalysisRun::where('public_id', $id)->firstOrFail();
+        $timeouts = [];
+        Http::fake(function ($request, $options) use ($id, &$timeouts) {
+            $timeouts[] = $options['timeout'];
+
+            return Http::response($this->processorResult($id));
+        });
+        app(ProcessorClient::class)->analyze($run);
+        $this->assertSame([50.0], $timeouts);
+        $job = new ProcessAnalysis($run->id);
+        $this->assertGreaterThanOrEqual(15, $timeouts[0] - 30);
+        $this->assertGreaterThan($timeouts[0], $job->timeout);
+        $this->assertGreaterThan($job->timeout, $job->middleware()[0]->expiresAfter);
+        $this->assertGreaterThan($job->middleware()[0]->expiresAfter, config('queue.connections.database.retry_after'));
+    }
+
+    public static function invalidTimeoutConfiguration(): array
+    {
+        return [[0, 60], [46, 60], [NAN, 60], [45, 59], [45, 61], [30, 0], [30, INF]];
+    }
+
+    #[DataProvider('invalidTimeoutConfiguration')]
+    public function test_invalid_timeout_configuration_is_terminal_before_http(float $budget, float $timeout): void
+    {
+        config(['services.processor.analysis_timeout_seconds' => $budget, 'services.processor.http_timeout_seconds' => $timeout]);
+        $id = $this->start()->assertStatus(202)->json('data.id');
+        $run = AnalysisRun::where('public_id', $id)->firstOrFail();
+        Http::fake(fn () => Http::response($this->processorResult($id)));
+        app()->call([new ProcessAnalysis($run->id), 'handle']);
+        $this->assertSame('failed', $run->fresh()->status);
+        $this->assertSame('processor_not_configured', $run->fresh()->error_code);
+        Http::assertNothingSent();
+        $this->assertDatabaseCount('analysis_findings', 0);
+    }
+
+    public function test_python_budget_configuration_failure_is_terminal(): void
+    {
+        $id = $this->start()->assertStatus(202)->json('data.id');
+        $run = AnalysisRun::where('public_id', $id)->firstOrFail();
+        Http::fake(fn () => Http::response(['detail' => 'analysis_not_configured'], 503));
+        app()->call([new ProcessAnalysis($run->id), 'handle']);
+        $this->assertSame('failed', $run->fresh()->status);
+        $this->assertSame(1, $run->fresh()->attempts);
+        $this->assertDatabaseCount('analysis_findings', 0);
+    }
+
+    public function test_budget_and_busy_retries_do_not_persist_partial_or_duplicate_results(): void
+    {
+        $id = $this->start()->assertStatus(202)->json('data.id');
+        $run = AnalysisRun::where('public_id', $id)->firstOrFail();
+        Http::fakeSequence()->push(['detail' => 'analysis_budget_exceeded'], 503)
+            ->push(['detail' => 'analysis_in_progress'], 503)->push(['detail' => 'analysis_capacity_exceeded'], 503)
+            ->push($this->processorResult($id));
+        $job = new ProcessAnalysis($run->id);
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            try {
+                app()->call([$job, 'handle']);
+                $this->fail('Budget and capacity failures must reach the retrying worker.');
+            } catch (ProcessorException $error) {
+                $this->assertTrue($error->retryable);
+                $this->assertSame('processor_request_failed', $error->publicCode);
+            }
+            $this->assertSame('pending', $run->fresh()->status);
+            $this->assertSame($attempt, $run->fresh()->attempts);
+            $this->assertDatabaseCount('analysis_findings', 0);
+        }
+        app()->call([$job, 'handle']);
+        app()->call([$job, 'handle']);
+        $this->assertSame('completed', $run->fresh()->status);
+        $this->assertDatabaseCount('analysis_findings', 1);
+        Http::assertSentCount(4);
+    }
+
     public function test_completed_persistence_survives_late_exception_and_duplicate_delivery(): void
     {
         $id = $this->start()->assertStatus(202)->json('data.id');

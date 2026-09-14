@@ -4,6 +4,8 @@ return [
     'processor' => [
         'url' => env('PROCESSOR_URL', 'http://processor:8001'),
         'secret' => env('PROCESSOR_HMAC_SECRET'),
+        'analysis_timeout_seconds' => (float) env('PROCESSOR_ANALYSIS_TIMEOUT_SECONDS', 45),
+        'http_timeout_seconds' => (float) env('PROCESSOR_HTTP_TIMEOUT_SECONDS', 60),
     ],
 
     /*

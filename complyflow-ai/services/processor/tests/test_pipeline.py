@@ -160,7 +160,7 @@ def test_endpoint_sanitizes_unexpected_provider_details(client, monkeypatch, cap
     from app.providers.base import ProviderError
 
     class BrokenProvider:
-        def analyze(self, requirement, contexts):
+        def analyze(self, requirement, contexts, *, budget=None):
             error = ProviderError if error_type == 'provider' else RuntimeError
             raise error('SECRET document and provider URL')
 

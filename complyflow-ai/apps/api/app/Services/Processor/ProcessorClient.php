@@ -58,7 +58,7 @@ class ProcessorClient
             throw new ProcessorException('processor_unavailable', true);
         }
         if ($response->status() !== 200) {
-            $configurationFailure = $response->json('detail') === 'provider_not_configured';
+            $configurationFailure = in_array($response->json('detail'), ['provider_not_configured', 'analysis_not_configured'], true);
             throw new ProcessorException('processor_request_failed', ! $configurationFailure && (in_array($response->status(), [408, 429], true) || $response->serverError()));
         }
         try {

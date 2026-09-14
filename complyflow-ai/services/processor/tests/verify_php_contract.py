@@ -11,11 +11,17 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.execution import ExecutionBudget
 from app.schemas import AnalyzeResponse
 from app.security import hmac_auth
 
 
 wire = json.load(sys.stdin)
+limits = wire['execution_limits']
+python_budget = ExecutionBudget.from_settings(clock=lambda: 0).remaining()
+assert limits['analysis_budget_seconds'] == python_budget
+assert python_budget + 15 <= limits['http_timeout_seconds'] <= 60
+assert limits['http_timeout_seconds'] < limits['job_timeout_seconds'] < limits['overlap_seconds'] < limits['retry_after_seconds']
 fixture = json.loads((Path(__file__).parents[1] / 'openapi/hmac-test-vector.json').read_text())
 body = base64.b64decode(wire['body_base64'], validate=True)
 assert body == base64.b64decode(fixture['body_base64'], validate=True)
@@ -28,7 +34,8 @@ os.environ['PROCESSOR_HMAC_SECRET'] = fixture['test_secret']
 received = []
 
 
-def accepted_payload(_pipeline, request):
+def accepted_payload(_pipeline, request, *, budget=None):
+    budget.checkpoint()
     received.append(request.model_dump(mode='json'))
     return AnalyzeResponse(analysis_id=request.analysis_id, findings=[], processed_documents=[])
 
@@ -41,4 +48,4 @@ with patch.object(hmac_auth, 'wall_clock', return_value=int(fixture['timestamp']
     assert received == [json.loads(fixture['body_utf8'])]
     assert client.post('/v1/analyze', content=body, headers=request_headers).status_code == 401
 
-print('PASS: PHP HTTP body/headers/signature accepted by Python HMAC + closed schema; replay rejected.')
+print('PASS: PHP HTTP body/headers/signature accepted by Python HMAC + closed schema; replay rejected; execution deadline margins match.')
