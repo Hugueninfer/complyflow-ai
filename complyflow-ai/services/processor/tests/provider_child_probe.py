@@ -17,10 +17,10 @@ mode, state_path = sys.argv[1:]
 http_budgets = []
 
 
-def trace(stage):
+def trace(stage, pid=None):
     path = Path(state_path).with_suffix('.events')
     events = json.loads(path.read_text()) if path.exists() else []
-    events.append({'stage': stage, 'time': monotonic(), 'pid': os.getpid()})
+    events.append({'stage': stage, 'time': monotonic(), 'pid': os.getpid() if pid is None else pid})
     temporary = path.with_suffix('.events.tmp')
     temporary.write_text(json.dumps(events))
     temporary.replace(path)
@@ -38,9 +38,18 @@ def record(descendant=None):
 
 def descendant():
     # Remains in the worker's process group; SIGKILL must catch TERM resistance.
-    return subprocess.Popen([
-        sys.executable, '-c', 'import signal; signal.signal(signal.SIGTERM, signal.SIG_IGN); signal.pause()',
-    ], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).pid
+    process = subprocess.Popen([
+        sys.executable, '-c',
+        'import os, signal; signal.signal(signal.SIGTERM, signal.SIG_IGN); '
+        "os.write(1, b'R'); os.close(1); signal.pause()",
+    ], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    # PID allocation is not readiness: only the descendant can acknowledge
+    # that its handler is installed. The outer real deadline still owns us.
+    with process.stdout:
+        if process.stdout.read(1) != b'R':
+            raise RuntimeError('descendant did not confirm its SIGTERM handler')
+    trace('descendant_sigterm_ignored', pid=process.pid)
+    return process.pid
 
 
 if mode in {'dns', 'dns_shutdown', 'dns_only'}:
@@ -54,6 +63,7 @@ if mode in {'dns', 'dns_shutdown', 'dns_only'}:
     socket.getaddrinfo = blocked_dns
 elif mode == 'crash_descendant':
     record(descendant())
+    trace('crash_descendant_exit')
     os._exit(77)
 else:
     record()

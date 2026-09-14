@@ -49,7 +49,7 @@ def wait_shutdown(path):
     deadline = monotonic() + 2
     while True:
         stages = {event['stage'] for event in json.loads(path.with_suffix('.events').read_text())}
-        if {'resolver_entered', 'request_scope_exited'} <= stages:
+        if {'descendant_sigterm_ignored', 'resolver_entered', 'request_scope_exited'} <= stages:
             return state
         assert monotonic() < deadline, stages
         Event().wait(0.005)
@@ -68,6 +68,104 @@ def assert_reaped(state):
     for pid in [state['pid'], state.get('descendant')]:
         if pid:
             assert not Path(f'/proc/{pid}').exists(), f'PID {pid} is still live or zombie'
+
+
+@pytest.mark.parametrize('mode', ['dns', 'dns_shutdown', 'crash_descendant'])
+def test_probe_waits_for_installed_term_handler_and_descendant_requires_kill(monkeypatch, tmp_path, mode):
+    from app.providers import process_isolation
+
+    path = tmp_path / 'child.json'
+    gate = tmp_path / 'handler_waiting'
+    probe = Path(__file__).with_name('provider_child_probe.py')
+    # Stop the real descendant exactly before signal.signal installs SIG_IGN.
+    # This exec-only seam changes no production process or timeout behavior.
+    delayed_install = f'''
+import os, signal
+from pathlib import Path
+original_signal = signal.signal
+def install(signum, handler):
+    if signum == signal.SIGTERM:
+        Path({str(gate)!r}).write_text(str(os.getpid()))
+        os.kill(os.getpid(), signal.SIGSTOP)
+    return original_signal(signum, handler)
+signal.signal = install
+'''
+    wrapper = f'''
+import runpy, subprocess, sys
+original_popen = subprocess.Popen
+def start(command, **kwargs):
+    if command[1:2] == ['-c']:
+        command = [*command[:2], {delayed_install!r} + command[2]]
+    return original_popen(command, **kwargs)
+subprocess.Popen = start
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name='__main__')
+'''
+    monkeypatch.setattr(process_isolation, '_child_command', lambda: [
+        sys.executable, '-c', wrapper, str(probe), mode, str(path),
+    ])
+    original_reap = process_isolation.reap_group
+    exits = []
+
+    def observe_reap(pgid):
+        try:
+            result = os.waitid(os.P_PGID, pgid, os.WEXITED | os.WNOWAIT)
+            exits.append((result.si_pid, result.si_code, result.si_status))
+        except ChildProcessError:
+            pass
+        finally:
+            original_reap(pgid)
+
+    monkeypatch.setattr(process_isolation, 'reap_group', observe_reap)
+    budget = ExecutionBudget(5)
+    errors = []
+
+    def analyze():
+        try:
+            provider().analyze(requirement(), [context()], budget=budget)
+        except Exception as error:
+            errors.append(str(error))
+
+    thread = Thread(target=analyze)
+    thread.start()
+    try:
+        deadline = monotonic() + 4
+        while not gate.exists():
+            assert not path.exists() and not errors, 'probe advanced before descendant installed SIGTERM handler'
+            assert monotonic() < deadline, 'descendant never reached signal installation'
+            Event().wait(0.005)
+        # Hold the installation gate: neither readiness nor crash may advance.
+        deadline = monotonic() + 0.1
+        while monotonic() < deadline:
+            assert not path.exists() and not errors, 'probe advanced before descendant installed SIGTERM handler'
+            events = json.loads(path.with_suffix('.events').read_text())
+            assert 'descendant_sigterm_ignored' not in {event['stage'] for event in events}
+            Event().wait(0.005)
+        pid = int(gate.read_text())
+        os.kill(pid, signal.SIGCONT)
+        state = wait_state(path)
+        assert state['descendant'] == pid
+        if mode != 'crash_descendant':
+            status = Path(f'/proc/{pid}/status').read_text().splitlines()
+            ignored = int(next(line.split()[1] for line in status if line.startswith('SigIgn:')), 16)
+            assert ignored & (1 << (signal.SIGTERM - 1)), 'readiness preceded actual SIG_IGN installation'
+            if mode == 'dns_shutdown':
+                wait_shutdown(path)
+            budget.cancel()
+        thread.join(2)
+        assert not thread.is_alive()
+        events = json.loads(path.with_suffix('.events').read_text())
+        stages = [event['stage'] for event in events]
+        ready = stages.index('descendant_sigterm_ignored')
+        subsequent = 'crash_descendant_exit' if mode == 'crash_descendant' else 'resolver_entered'
+        assert ready < stages.index(subsequent)
+        assert events[ready]['pid'] == pid
+        assert exits == [(pid, os.CLD_KILLED, signal.SIGKILL)], 'TERM-resistant descendant must require KILL and reap'
+        assert errors == ['provider_unavailable' if mode == 'crash_descendant' else 'analysis_cancelled']
+        assert_reaped(state)
+    finally:
+        budget.cancel()
+        thread.join(2)
 
 
 @pytest.mark.parametrize('stop', ['operation', 'budget', 'cancel'])
