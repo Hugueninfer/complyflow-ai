@@ -3,11 +3,13 @@
 use App\Http\Controllers\Api\V1\AnalysisController;
 use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DemoSessionController;
 use App\Http\Controllers\Api\V1\DocumentController;
 use App\Http\Controllers\Api\V1\FindingController;
 use App\Http\Controllers\Api\V1\FindingReviewController;
 use App\Http\Controllers\Api\V1\RequirementSetController;
+use App\Http\Controllers\Api\V1\SupplierComparisonController;
 use App\Http\Controllers\Api\V1\SupplierController;
 use App\Http\Controllers\Api\V1\SupplierDecisionController;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +28,8 @@ Route::middleware('web')->prefix('v1')->group(function (): void {
     Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
 
     Route::middleware(['auth:sanctum', 'organization'])->group(function (): void {
+        Route::get('/dashboard', DashboardController::class);
+        Route::get('/comparisons', SupplierComparisonController::class);
         Route::get('/suppliers', [SupplierController::class, 'index']);
         Route::post('/suppliers', [SupplierController::class, 'store'])->middleware('demo.quota:suppliers');
         Route::get('/suppliers/{supplier}', [SupplierController::class, 'show']);

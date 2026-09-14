@@ -9,6 +9,11 @@ use App\Support\CurrentOrganization;
 
 class AnalysisRunPolicy
 {
+    public function viewAny(User $user): bool
+    {
+        return $user->hasPermission('analysis.view');
+    }
+
     public function create(User $user, Supplier $supplier): bool
     {
         return $supplier->organization_id === app(CurrentOrganization::class)->id() && $user->hasPermission('analysis.run');
