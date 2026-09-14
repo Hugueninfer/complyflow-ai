@@ -37,7 +37,47 @@ for path in ['/.env', '/index.php', '/api/does-not-exist', '/assets/missing.js']
         raise AssertionError('Private/missing path unexpectedly served: ' + path)
     except urllib.error.HTTPError as error:
         assert error.code in (403, 404)
+
+# Two independent browser cookie jars reach the same Nginx peer address.
+identity = str(uuid.uuid4()) + '@example.invalid'
+visitors = []
+for _ in range(2):
+    jar = http.cookiejar.CookieJar()
+    visitor = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    visitor.open(base + '/sanctum/csrf-cookie').close()
+    visitors.append((visitor, jar))
+
+
+def login_status(visitor, jar, email, forwarded_ip):
+    token = urllib.parse.unquote(next(c.value for c in jar if c.name == 'XSRF-TOKEN'))
+    try:
+        visitor.open(urllib.request.Request(base + '/api/v1/login', data=json.dumps({'email': email}).encode(), headers={
+            'Accept': 'application/json', 'Content-Type': 'application/json', 'X-XSRF-TOKEN': token,
+            'X-Forwarded-For': forwarded_ip, 'Origin': 'https://untrusted.invalid',
+        })).close()
+        raise AssertionError('Login without password succeeded')
+    except urllib.error.HTTPError as error:
+        return error.code
+
+
+for attempt in range(5):
+    assert login_status(*visitors[0], identity, f'192.0.2.{attempt}') == 422
+assert login_status(*visitors[0], identity, '203.0.113.1') == 429
+assert login_status(*visitors[1], ' ' + identity.upper() + ' ', '203.0.113.2') == 429
+assert login_status(*visitors[1], str(uuid.uuid4()) + '@example.invalid', '203.0.113.2') == 422
+print('PASS: independent visitor cookies behind one proxy; normalized identity cannot evade limit with forged XFF/Origin')
 request('/sanctum/csrf-cookie')
+# Real middleware remains enabled here (Laravel unit/feature harness bypasses CSRF).
+for path, data, expected in [('/api/v1/me', None, 401), ('/api/v1/demo-sessions', b'{}', 419)]:
+    try:
+        client.open(urllib.request.Request(base + path, data=data, headers={
+            'Accept': 'application/json', 'Content-Type': 'application/json',
+            'Origin': 'https://attacker.invalid', 'X-Forwarded-For': '203.0.113.99',
+            'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': 'attacker.invalid',
+        }))
+        raise AssertionError('Missing authentication/CSRF unexpectedly accepted')
+    except urllib.error.HTTPError as error:
+        assert error.code == expected, (path, error.code)
 response, body = request('/api/v1/demo-sessions', {})
 assert response.status == 201
 response, body = request('/api/v1/suppliers')

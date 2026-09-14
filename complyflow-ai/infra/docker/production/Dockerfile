@@ -86,7 +86,7 @@ COPY --from=web /build/dist ./public
 COPY services/processor/app /app/services/processor/app
 COPY demo-assets/manifest.json demo-assets/*.pdf /app/demo-assets/
 COPY output/pdf /app/output/pdf
-COPY infra/docker/production/entrypoint.sh infra/docker/production/bootstrap.php infra/docker/production/nginx.conf infra/docker/production/php.ini infra/docker/production/php-fpm.conf infra/docker/production/supervisord.conf /etc/complyflow/
+COPY infra/docker/production/entrypoint.sh infra/docker/production/bootstrap.php infra/docker/production/render-nginx.php infra/docker/production/nginx.conf infra/docker/production/php.ini infra/docker/production/php-fpm.conf infra/docker/production/supervisord.conf /etc/complyflow/
 RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
     && chown -R app:app storage bootstrap/cache \
     && chmod 700 storage bootstrap/cache \

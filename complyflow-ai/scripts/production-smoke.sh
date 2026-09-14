@@ -8,6 +8,7 @@ cleanup() { "${compose[@]}" down -v; }
 trap cleanup EXIT
 "${compose[@]}" up -d --build --wait --wait-timeout 180
 bash tests/production/entrypoint.sh
+bash tests/production/proxy.sh
 python3 tests/production/smoke.py
 snapshot_sql="SELECT md5(string_agg(document_id::text || ':' || md5(contents::text), ',' ORDER BY document_id)) FROM document_blobs; SELECT public_id FROM organizations WHERE slug = 'demo-template';"
 before_restart=$("${compose[@]}" exec -T postgres psql -U smoke -d smoke -Atc "$snapshot_sql")

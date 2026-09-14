@@ -20,6 +20,10 @@ Faça push dos arquivos para seu próprio repositório GitHub/GitLab conectado a
 
 `APP_URL` é derivada automaticamente de `RENDER_EXTERNAL_URL` antes dos caches. Se adicionar domínio próprio, configure `APP_URL` com a URL HTTPS desse domínio na aba **Environment** e aplique novo deploy. `APP_KEY_MATERIAL` e `PROCESSOR_HMAC_SECRET` são gerados com `generateValue`; `DB_URL` vem de `fromDatabase.connectionString`. Preserve esses valores entre deploys. Não exponha o processador, não configure chaves em Vue/Vite e não habilite APP_DEBUG para investigar falhas públicas.
 
+Use uma origem canônica, por exemplo `https://meu-servico.onrender.com`, sem caminho, query, fragmento ou credenciais. O startup rejeita configurações inválidas. Scheme/host/porta são repassados por Nginx ao PHP-FPM a partir dessa configuração, não de Host/Forwarded/X-Forwarded-* enviados pelo cliente. Assim URLs e cookies Secure permanecem corretos atrás da terminação TLS do Render sem `trustProxies('*')` ou CIDRs presumidos. Não foi configurada confiança em proxies externos; o único caminho para FPM é o Nginx local em loopback. Não exponha a porta9000. Um domínio alternativo não altera automaticamente a origem canônica.
+
+Não use `request->ip()` como identificação do visitante nesse deploy: ele pode representar o balanceador. Os limites públicos usam identidade normalizada e nonce de sessão server-side; dois visitantes atrás do mesmo proxy não dividem seus limites individuais. Demo tem também teto agregado de 60/minuto para conter rotação de cookies. Isso não é proteção completa contra abuso nem garantia de capacidade para 60 demos/minuto em 512 MB; veja os [tradeoffs de segurança](security.md#limites-públicos-e-proxy-reverso).
+
 ## Custos e limitações reais
 
 | Recurso | Plano gratuito consultado |
@@ -50,7 +54,7 @@ A carência permite upgrade para plano pago, não estende a demonstração gratu
 bash scripts/production-smoke.sh
 ```
 
-Esse script utiliza banco separado descartável, testa a imagem sem bind de fontes e a reinicia; depois roda Playwright contra Nginx/PHP-FPM reais. O schema JSON oficial pode ser validado com Python `jsonschema` e PyYAML ou pela integração SchemaStore do editor:
+Esse script utiliza banco separado descartável, testa a imagem sem bind de fontes e a reinicia; depois roda Playwright contra Nginx/PHP-FPM reais. Um container adicional descartável monta somente um front controller de diagnóstico de teste para verificar HTTPS/URLs/cookie Secure e headers forjados através de FastCGI; essa rota não entra na imagem publicada. O fluxo normal também verifica rejeições 401/419. O schema JSON oficial pode ser validado com Python `jsonschema` e PyYAML ou pela integração SchemaStore do editor:
 
 ```bash
 curl -fsSL https://render.com/schema/render.yaml.json -o /tmp/render-schema.json
