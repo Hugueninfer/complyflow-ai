@@ -7,9 +7,12 @@ import type { Envelope, Finding, FindingReview } from '../types/domain'
 import ResourceState from '../components/ui/ResourceState.vue'
 import FindingTable from '../components/findings/FindingTable.vue'
 import EvidenceDrawer from '../components/findings/EvidenceDrawer.vue'
+import HumanDecisionPanel from '../components/reviews/HumanDecisionPanel.vue'
+import type { DecisionContext } from '../types/portfolio'
 import '../styles/analysis.css'
 const route = useRoute(), findings = ref<Finding[]>([]), selectedId = ref(''), loading = ref(true), error = ref(''), success = ref(''), search = ref(''), status = ref(''), category = ref(''), pending = ref(false)
 const searchInput = ref<HTMLInputElement>()
+const decisionContext = ref<DecisionContext>()
 let controller: AbortController | undefined, generation = 0
 const selected = computed(() => findings.value.find(finding => finding.id === selectedId.value))
 const categories = computed(() => [...new Set(findings.value.map(f => f.requirement.category))])
@@ -17,12 +20,12 @@ const awaiting = computed(() => findings.value.filter(f => f.requires_human_revi
 const filtered = computed(() => findings.value.filter(f => (!status.value || f.status === status.value) && (!category.value || f.requirement.category === category.value) && (!pending.value || (f.requires_human_review && !f.latest_review)) && [f.requirement.code, f.requirement.title, f.requirement.category, f.justification, f.search_summary, ...f.citations.map(c => c.quote)].join(' ').toLocaleLowerCase('pt-BR').includes(search.value.toLocaleLowerCase('pt-BR').trim())))
 async function load(background = false) {
   const current = ++generation; controller?.abort(); controller = new AbortController(); if (!background) loading.value = true; error.value = ''
-  try { const response = await api.get<Envelope<Finding[]>>(`/analyses/${encodeURIComponent(String(route.params.id))}/findings`, { signal: controller.signal }); if (current === generation) findings.value = response.data.data }
+  try { const response = await api.get<Envelope<Finding[]> & { meta?: { decision_context?: DecisionContext } }>(`/analyses/${encodeURIComponent(String(route.params.id))}/findings`, { signal: controller.signal }); if (current === generation) { findings.value = response.data.data; decisionContext.value = response.data.meta?.decision_context } }
   catch (cause) { if (current === generation) error.value = (cause as Error).message }
   finally { if (current === generation) loading.value = false }
 }
 function saved(review: FindingReview) { generation++; controller?.abort(); findings.value = findings.value.map(f => f.id === review.finding_id ? { ...f, latest_review: review } : f); success.value = 'Revisão registrada. A sugestão original da IA foi preservada.'; void load(true) }
-watch(() => route.params.id, () => { selectedId.value = ''; success.value = ''; findings.value = []; search.value = ''; status.value = ''; category.value = ''; pending.value = false; void load() }, { immediate: true })
+watch(() => route.params.id, () => { selectedId.value = ''; success.value = ''; findings.value = []; decisionContext.value = undefined; search.value = ''; status.value = ''; category.value = ''; pending.value = false; void load() }, { immediate: true })
 onBeforeUnmount(() => { generation++; controller?.abort() })
 </script>
 <template>
@@ -108,6 +111,13 @@ onBeforeUnmount(() => { generation++; controller?.abort() })
       />
     </section>
   </ResourceState>
+  <HumanDecisionPanel
+    v-if="decisionContext"
+    :key="decisionContext.analysis_id"
+    :context="decisionContext"
+    @saved="load(true)"
+    @conflict="load(true)"
+  />
   <EvidenceDrawer
     v-if="selected"
     :finding="selected"

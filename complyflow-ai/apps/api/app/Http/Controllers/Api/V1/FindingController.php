@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\FindingResource;
 use App\Models\AnalysisRun;
 use App\Models\FindingReview;
+use App\Models\RequirementSet;
+use App\Models\Supplier;
 use App\Models\SupplierDecision;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -37,6 +39,26 @@ class FindingController extends Controller
             $finding->review_locked = $locked;
         }
 
-        return FindingResource::collection($findings);
+        $response = FindingResource::collection($findings);
+        if (request()->user()->hasPermission('supplier.decide')) {
+            $supplier = Supplier::forCurrentOrganization()->find($run->supplier_id);
+            $set = RequirementSet::forCurrentOrganization()->find($run->requirement_set_id);
+            $rootId = $set?->parent_id ?? $set?->id;
+            $root = $rootId ? RequirementSet::forCurrentOrganization()->find($rootId) : null;
+            $latestVersion = $root ? RequirementSet::forCurrentOrganization()->where(fn ($q) => $q->where('id', $rootId)->orWhere('parent_id', $rootId))->where('status', 'published')->max('version') : null;
+            $reviewed = $findings->filter(fn ($finding) => $reviews->has($finding->id))->pluck('requirement_public_id');
+            $pending = $set ? $set->requirements()->where('organization_id', $run->organization_id)->where('is_required', true)->whereNotIn('public_id', $reviewed)->count() : 0;
+            $decision = SupplierDecision::forCurrentOrganization()->where('analysis_run_id', $run->id)->where('supplier_id', $run->supplier_id)->first();
+            $response->additional(['meta' => ['decision_context' => [
+                'analysis_id' => $run->public_id, 'supplier_id' => $supplier?->public_id,
+                'requirement_set_id' => $set?->public_id, 'status' => $run->status,
+                'required_pending' => $pending,
+                'is_latest_for_supplier' => ! AnalysisRun::forCurrentOrganization()->where('supplier_id', $run->supplier_id)->where('id', '>', $run->id)->exists(),
+                'is_current_checklist' => $root && $set?->status === 'published' && (int) $latestVersion === $set->version,
+                'decision' => $decision ? ['id' => $decision->public_id, 'decision' => $decision->decision, 'reason' => $decision->justification, 'decided_at' => $decision->decided_at->toISOString()] : null,
+            ]]]);
+        }
+
+        return $response;
     }
 }

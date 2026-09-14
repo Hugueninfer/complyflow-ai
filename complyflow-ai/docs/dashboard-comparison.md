@@ -88,3 +88,9 @@ Os timestamps são ISO 8601 UTC; `completed_at` pode ser `null` em dados legados
 - `409`: checklist existe no tenant, mas não está publicado.
 
 Executar `docker compose run --rm api php artisan test tests/Feature/Dashboard tests/Feature/Comparison`. Os testes rodam sobre PostgreSQL do Compose e cobrem agregação, versões, estados vazios, isolamento/IDOR, RBAC, correções humanas, ordem, limites de evidência, ausência de ranking e consultas constantes.
+
+## Interface
+
+`/` apresenta os quatro indicadores com os valores retornados pelo servidor, estado vazio/erro e atalhos para fornecedores, requisitos, comparação e auditoria conforme permissões. O texto explica que status efetivo pode incluir IA ainda não revisada.
+
+`/comparacoes` carrega os fornecedores e versões publicadas reais. Aceita query `left`, `right`, `requirement_set` para consulta direta e preserva a versão exata. O grid mantém os lados solicitados, identifica versão/análise histórica e distingue ausência de análise de ausência de achado. Cada célula separa sugestão IA, confiança assistiva, revisão humana e citações limitadas; links abrem a matriz para evidências integrais e decisão humana. Em telas abaixo de 768px, cada requisito vira cartão com ambos os fornecedores nomeados. No tablet, a inspeção integral continua no drawer da matriz. Nenhum score agregado, ordenação por desempenho ou vencedor é produzido.

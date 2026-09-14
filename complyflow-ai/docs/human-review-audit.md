@@ -32,11 +32,19 @@ A análise deve pertencer ao fornecedor e tenant, estar concluída e ser a mais 
 
 Existe uma decisão imutável por análise. Revisões e decisões usam chaves idempotentes separadas, únicas por organização e operação. Repetir a mesma chave e conteúdo pelo mesmo ator retorna o registro original (`200`); criação retorna `201`. Reutilizar a chave com conteúdo/ator/alvo diferente retorna `409`. Nova chave para análise já decidida também retorna `409`. IDs inválidos ou fora do tenant retornam `404`, permissões insuficientes `403`, validação `422` e conflito de estado `409`.
 
+### Contexto de decisão na matriz
+
+Para atores com `supplier.decide`, o GET de findings acrescenta `meta.decision_context` com `analysis_id`, `supplier_id`, `requirement_set_id`, `status`, `required_pending`, `is_latest_for_supplier`, `is_current_checklist` e `decision`. IDs são UUIDs; fornecedor ou checklist removidos produzem ID nulo e não habilitam a ação. `required_pending` inclui requisitos obrigatórios sem achado ou sem revisão. `decision` é nulo ou a projeção do registro persistido (`id`, `decision`, `reason`, `decided_at`), sem IDs internos ou dados de idempotência. A projeção só orienta a interface; o POST revalida todas as regras sob os locks existentes e permanece a fonte de verdade.
+
+Na matriz `/analises/{id}/matriz`, o formulário final fica separado da IA e exige escolha, justificativa e confirmação explícitas. Só é oferecido após todos os requisitos obrigatórios revisados, análise atual concluída e checklist atual. Reenvio do mesmo corpo após resposta incerta conserva a chave. Conflitos 409 e permissão 403 bloqueiam novo envio, preservando a justificativa como texto copiável, inclusive se o GET de atualização falhar. Após sucesso, o foco vai ao resultado humano imutável; recarregar a rota mostra a mesma decisão persistida. O formulário não produz aprovação automática.
+
 ## Consultar auditoria
 
 `GET /api/v1/audit-logs?page=1&per_page=25`
 
 Retorna `data` e `meta` (`current_page`, `last_page`, `per_page`, `total`). O limite máximo é 100 eventos por página. A ordem é inversa de inserção, determinada pelo ID interno, que não é exposto. Cada evento contém UUID do evento, UUIDs preservados de organização e ator, ação, tipo/UUID do alvo, metadados permitidos, hashes e timestamp UTC.
+
+`meta.integrity` contém `scope: "page"` e `status: "verified" | "broken" | "unverifiable" | "empty"`. Em cada leitura, o servidor reutiliza `AuditHash::make` para recalcular os hashes dos eventos da página, confere as ligações entre eles e a referência ao predecessor imediatamente fora da página (uma consulta adicional limitada). Na última página, a ausência de predecessor exige hash anterior nulo. Não varre a cadeia inteira nem atesta páginas que não foram consultadas. Registros sem snapshot de organização/hash são identificados como legados não verificáveis; ausência de eventos não é apresentada como cadeia íntegra. A interface `/auditoria` expõe esses limites, hashes em detalhes técnicos acessíveis e alerta de quebra. Metadados legados nulos são suportados.
 
 `AuditLogger::record(AuditEvent $event)` serializa a cabeça da cadeia sob lock da organização, inclusive para o primeiro evento. Revisão/decisão e respectivo evento são gravados na mesma transação. Metadados aceitam somente UUIDs e enums específicos da ação; justificativas, observações, e-mails, nomes, PDFs e trechos não entram na auditoria.
 

@@ -10,6 +10,9 @@ import RequirementsView from '../views/RequirementsView.vue'
 import DocumentUploadView from '../views/DocumentUploadView.vue'
 import AnalysisProgressView from '../views/AnalysisProgressView.vue'
 import ComplianceMatrixView from '../views/ComplianceMatrixView.vue'
+import DashboardView from '../views/DashboardView.vue'
+import ComparisonView from '../views/ComparisonView.vue'
+import AuditView from '../views/AuditView.vue'
 
 declare module 'vue-router' {
   interface RouteMeta { requiresAuth?: boolean; title?: string; permission?: string }
@@ -21,6 +24,9 @@ export function createAppRouter(pinia: Pinia, history: RouterHistory = createWeb
     history,
     routes: [
       { path: '/login', name: 'login', component: LoginView, meta: { title: 'Acesso à plataforma' } },
+      { path: '/', component: DashboardView, meta: { requiresAuth: true, title: 'Visão Geral' } },
+      { path: '/comparacoes', component: ComparisonView, meta: { requiresAuth: true, title: 'Comparações', permission: 'supplier.view' } },
+      { path: '/auditoria', component: AuditView, meta: { requiresAuth: true, title: 'Auditoria', permission: 'audit.view' } },
       { path: '/fornecedores', component: SuppliersView, meta: { requiresAuth: true, title: 'Fornecedores', permission: 'supplier.view' } },
       { path: '/fornecedores/:id', component: SupplierDetailView, meta: { requiresAuth: true, title: 'Dossiê do fornecedor', permission: 'supplier.view' } },
       { path: '/fornecedores/:id/documentos', component: DocumentUploadView, meta: { requiresAuth: true, title: 'Envio de documentos', permission: 'document.upload' } },
@@ -28,10 +34,9 @@ export function createAppRouter(pinia: Pinia, history: RouterHistory = createWeb
       { path: '/analises/:id', component: AnalysisProgressView, meta: { requiresAuth: true, title: 'Acompanhamento da análise', permission: 'analysis.view' } },
       { path: '/analises/:id/matriz', component: ComplianceMatrixView, meta: { requiresAuth: true, title: 'Matriz de conformidade', permission: 'analysis.view' } },
       ...[
-        ['/', 'Visão Geral', ''],
         ['/analises', 'Análises', 'analysis.view'],
-        ['/revisoes', 'Revisões', 'finding.review'], ['/comparacoes', 'Comparações', 'supplier.view'],
-        ['/auditoria', 'Auditoria', 'audit.view'], ['/ajuda', 'Central de Ajuda', ''],
+        ['/revisoes', 'Revisões', 'finding.review'],
+        ['/ajuda', 'Central de Ajuda', ''],
       ].map(([path, title, permission]) => ({ path: path!, component: WorkspaceView, meta: { requiresAuth: true, title, permission } })),
       { path: '/sem-permissao', component: WorkspaceView, meta: { requiresAuth: true, title: 'Permissão insuficiente' } },
       { path: '/:pathMatch(.*)*', redirect: '/' },

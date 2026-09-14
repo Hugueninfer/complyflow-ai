@@ -5,7 +5,11 @@ import { describe, expect, it } from 'vitest'
 import App from '../../App.vue'
 import { createAppRouter } from '../../router'
 import { useAuthStore } from '../../stores/auth'
-import { demo, fakeServer, json, session } from '../../test/server'
+import { demo, fakeServer as serve, json, session } from '../../test/server'
+
+function fakeServer(handler: Parameters<typeof serve>[0]) {
+  serve((path, init) => path === '/api/v1/dashboard' ? json({ data: { suppliers_analyzed: 0, requirements_met: 0, pending_requirements: 0, analyses_awaiting_review: 0 } }) : handler(path, init))
+}
 
 async function openLogin(path = '/login') {
   const pinia = createPinia()
