@@ -188,6 +188,10 @@ def test_parser_memory_exhaustion_is_contained_and_sanitized(monkeypatch):
 
 
 def test_ocr_descendants_are_cleaned_up_with_the_isolated_process_group():
+    from app.processes import enable_child_reaping
+
+    # Real provider isolation enables subreaping on this same processor process.
+    enable_child_reaping()
     class ChildProcessOcr:
         def extract_page(self, pdf_bytes: bytes, page_number: int) -> str:
             child = subprocess.Popen(["sleep", "10"])
@@ -202,18 +206,15 @@ def test_ocr_descendants_are_cleaned_up_with_the_isolated_process_group():
     )
 
     try:
-        deadline = monotonic() + 0.5
-        while monotonic() < deadline:
-            stat = Path(f"/proc/{descendant_pid}/stat")
-            if not stat.exists() or stat.read_text().split()[2] == "Z":
-                break
-            sleep(0.01)
-        else:
-            pytest.fail("OCR descendant remained running after extraction")
+        assert not Path(f"/proc/{descendant_pid}").exists(), 'adopted OCR descendant was not reaped'
     finally:
         try:
             os.kill(descendant_pid, signal.SIGKILL)
         except ProcessLookupError:
+            pass
+        try:
+            os.waitpid(descendant_pid, 0)
+        except ChildProcessError:
             pass
 
 

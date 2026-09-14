@@ -10,6 +10,7 @@ trap cleanup EXIT
 bash tests/production/entrypoint.sh
 bash tests/production/proxy.sh
 python3 tests/production/smoke.py
+"${compose[@]}" exec -T app python3.12 /opt/probes/provider-isolation.py
 snapshot_sql="SELECT md5(string_agg(document_id::text || ':' || md5(contents::text), ',' ORDER BY document_id)) FROM document_blobs; SELECT public_id FROM organizations WHERE slug = 'demo-template';"
 before_restart=$("${compose[@]}" exec -T postgres psql -U smoke -d smoke -Atc "$snapshot_sql")
 # Runtime cache prefix is derived from the image's fixed APP_NAME="ComplyFlow AI".

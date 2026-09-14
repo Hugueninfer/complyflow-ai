@@ -10,10 +10,10 @@ from pydantic import ValidationError
 
 from app.execution import ExecutionBudget
 from app.providers.base import AIProvider, AnalysisContext, ProviderError
+from app.providers.process_isolation import MAX_RESPONSE_BYTES, request_in_child
 from app.schemas import FindingDraft, RequirementDraft
 
 
-MAX_RESPONSE_BYTES = 64 * 1024
 PROVIDER_TIMEOUT_SECONDS = 20.0
 SYSTEM_INSTRUCTIONS = (
     'Você auxilia a revisão de conformidade. Nunca aprove ou reprove fornecedores. '
@@ -36,7 +36,9 @@ def _delimited_json(value) -> str:
 
 
 class OpenAICompatibleProvider(AIProvider):
-    def __init__(self, *, base_url: str, api_key: str, model: str, transport=None):
+    _transport = None
+
+    def __init__(self, *, base_url: str, api_key: str, model: str):
         try:
             url = urlsplit(base_url)
             valid = (
@@ -49,7 +51,7 @@ class OpenAICompatibleProvider(AIProvider):
         if not valid:
             raise ProviderError('provider_not_configured')
         self.url = base_url.rstrip('/') + '/chat/completions'
-        self.api_key, self.model, self.transport = api_key, model, transport
+        self.base_url, self.api_key, self.model = base_url, api_key, model
 
     def analyze(
         self, requirement: RequirementDraft, contexts: list[AnalysisContext], *,
@@ -70,10 +72,7 @@ class OpenAICompatibleProvider(AIProvider):
                 name='finding', strict=True, schema=FindingDraft.model_json_schema(),
             )),
         )
-        # The pipeline's public contract is synchronous and runs in FastAPI's
-        # worker thread. Cancellable async I/O enforces a total HTTP deadline,
-        # including connection, response headers and a stalled/slow-drip body.
-        raw = anyio.run(self._request, payload, budget)
+        raw = self._execute_request(payload, budget)
         try:
             result = json.loads(raw)
             choices = result['choices']
@@ -90,6 +89,12 @@ class OpenAICompatibleProvider(AIProvider):
         if budget:
             budget.checkpoint()
         return finding
+
+    def _execute_request(self, payload, budget):
+        # Never run asyncio/DNS executor shutdown in a server worker thread.
+        return request_in_child(
+            self.base_url, self.api_key, payload, timeout=PROVIDER_TIMEOUT_SECONDS, budget=budget,
+        )
 
     async def _request(self, payload: dict, budget: ExecutionBudget | None = None) -> bytes:
         timeout = budget.remaining(PROVIDER_TIMEOUT_SECONDS) if budget else PROVIDER_TIMEOUT_SECONDS
@@ -125,7 +130,7 @@ class OpenAICompatibleProvider(AIProvider):
 
     async def _read_response(self, payload, timeout, deadline, budget) -> bytes:
         async with httpx.AsyncClient(
-            timeout=timeout, follow_redirects=False, trust_env=False, transport=self.transport,
+            timeout=timeout, follow_redirects=False, trust_env=False, transport=self._transport,
         ) as client:
             async with client.stream('POST', self.url, json=payload, headers={
                 'Authorization': 'Bearer ' + self.api_key,

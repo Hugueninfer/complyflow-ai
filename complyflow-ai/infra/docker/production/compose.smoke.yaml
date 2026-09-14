@@ -17,6 +17,10 @@ services:
       dockerfile: infra/docker/production/Dockerfile
     mem_limit: 512m
     cpus: 0.1
+    # Test-only probes outside /app; application code still comes from the image.
+    volumes:
+      - ../../../tests/production/provider-isolation.py:/opt/probes/provider-isolation.py:ro
+      - ../../../services/processor/tests/provider_child_probe.py:/opt/probes/provider_child_probe.py:ro
     ports: ["127.0.0.1:18080:10000"]
     environment:
       APP_KEY_MATERIAL: ${SMOKE_APP_KEY_MATERIAL:?Generate SMOKE_APP_KEY_MATERIAL}

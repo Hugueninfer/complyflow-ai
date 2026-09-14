@@ -14,7 +14,7 @@ $request = new SignedProcessorRequest(base64_decode($fixture['body_base64'], tru
 Http::fake(function ($wire, $options) {
     $job = new ProcessAnalysis(1);
     echo json_encode(['body_base64' => base64_encode($wire->body()), 'headers' => $wire->headers(),
-        'execution_limits' => ['analysis_budget_seconds' => config('services.processor.analysis_timeout_seconds'),
+        'execution_limits' => ['analysis_budget_seconds' => (float) config('services.processor.analysis_timeout_seconds'),
             'http_timeout_seconds' => $options['timeout'], 'job_timeout_seconds' => $job->timeout,
             'overlap_seconds' => $job->middleware()[0]->expiresAfter,
             'retry_after_seconds' => config('queue.connections.database.retry_after')]], JSON_THROW_ON_ERROR)."\n";

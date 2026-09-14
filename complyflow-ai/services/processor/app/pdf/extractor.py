@@ -18,6 +18,7 @@ from time import monotonic
 from pypdf import PdfReader
 
 from app.execution import ExecutionBudget
+from app.processes import reap_group
 
 
 MAX_PDF_BYTES = 5 * 1024 * 1024
@@ -322,6 +323,9 @@ def _stop_process(process) -> None:
     if process.is_alive():
         process.kill()
         process.join()
+    # Provider isolation enables Linux subreaping in this same server. Orphan
+    # OCR descendants adopted here must not remain zombies after PDF cleanup.
+    reap_group(process.pid)
 
 
 def extract_pages(

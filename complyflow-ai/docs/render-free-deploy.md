@@ -69,6 +69,13 @@ curl -fsSL https://render.com/schema/render.yaml.json -o /tmp/render-schema.json
 python3 -c 'import json,jsonschema,yaml; jsonschema.validate(yaml.safe_load(open("render.yaml")), json.load(open("/tmp/render-schema.json")))'
 ```
 
+O Compose de smoke monta duas sondas de teste, somente leitura, em `/opt/probes`
+(fora do código `/app` da imagem). Elas bloqueiam DNS nativo sem rede externa
+e verificam TERM/KILL, recolhimento sem zumbis e retry da mesma análise no
+runtime completo de 512 MiB/0,1 CPU. As sondas não entram na imagem publicada.
+O provedor real exige Linux com adoção/recolhimento de processos filhos;
+o fake não executa esse caminho nem paga o custo de iniciar outro Python.
+
 Validação de schema não cria recursos nem confirma disponibilidade/cotas da conta. A validação oficial por API/CLI pode pedir credenciais; ela não foi usada aqui.
 
 Health503: confira disponibilidade/expiração do banco e logs de processos. Erro de inicialização: confira `DB_URL`, permissões/extensão vector e se o banco pertence ao Blueprint correto. O entrypoint falha fechado e não imprime conexão ou material da chave. Para reproduzir com detalhes, use a base local fictícia; não publique logs com credenciais. 419 de CSRF: use sempre a mesma URL HTTPS, verifique APP_URL, cookies e domínio. Após cold start, aguarde inicialização antes de repetir uma operação.

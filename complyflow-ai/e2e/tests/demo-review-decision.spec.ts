@@ -2,7 +2,14 @@ import { expect, test, type Page } from '@playwright/test'
 
 async function enterDemo(page: Page) {
   await page.goto('/')
-  await page.getByRole('button', { name: /explorar demonstração/i }).click()
+  const [created] = await Promise.all([
+    // The 512 MiB runtime has one FPM child: concurrent visitors queue their
+    // CSRF + demo creation before navigation. Keep the overall test at 45 s.
+    page.waitForResponse((response) => response.url().endsWith('/api/v1/demo-sessions')
+      && response.request().method() === 'POST', { timeout: 30000 }),
+    page.getByRole('button', { name: /explorar demonstração/i }).click(),
+  ])
+  expect(created.status()).toBe(201)
   await expect(page.getByRole('heading', { name: /visão geral/i })).toBeVisible()
   await page.goto('/fornecedores')
   await page.getByRole('link', { name: 'NovaGuard Facilities', exact: true }).click()

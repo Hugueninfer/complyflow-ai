@@ -39,12 +39,33 @@ O processo PDF recebe `min(30 s, restante)`; cada chamada ao provedor recebe
 preparação/recuperação verificam o mesmo token cooperativo. Um novo requisito
 ou PDF não reinicia o prazo. O fake permanece determinístico, local e sem rede.
 
+Cada chamada real ao adaptador OpenAI-compatible executa em um processo Python
+dedicado iniciado por `exec`, com nova sessão/grupo, não em uma cópia `fork` do
+servidor multithread. O pai aplica o prazo absoluto também à inicialização,
+envio/leitura de IPC e encerramento do loop/executor. Assim DNS nativo preso em
+`getaddrinfo` não mantém uma thread do servidor aguardando o shutdown do asyncio.
+O protocolo usa tamanho de 4 bytes + JSON/bytes, sem pickle: até **256 KiB** para
+a requisição interna (incluindo credencial/schema) e **64 KiB** de resposta,
+mais um byte de estado. Corpo HTTP comprimido é recusado. Payload acima do teto
+falha antes de iniciar o filho, com `invalid_provider_request` sanitizado.
+
+O subprocesso recebe apenas um ambiente mínimo e os dados por pipe: chave de IA
+e texto não entram em argumentos, arquivos ou logs. Saída de diagnóstico do
+filho é descartada; erros de IPC, crash e exceções têm códigos públicos fechados.
+O filho limita memória virtual a 256 MiB e CPU a 20 s; esses tetos não reservam
+essa memória nem substituem o prazo do pai. `PR_SET_PDEATHSIG` vincula o worker
+HTTP ao processo pai, encerrando também suas threads nativas se o servidor
+morrer abruptamente. O provedor fake não inicia esse processo extra. Sob 0,1 CPU, exec/imports
+podem consumir parte significativa dos 20 s; esse custo nunca reinicia o prazo.
+
 O prazo global pode ser reduzido, mas deve ser finito, positivo e no máximo
 45 s. `PROCESSOR_HTTP_TIMEOUT_SECONDS` configura o transporte Laravel: padrão
 60 s, no máximo 60 s e pelo menos **15 s acima** do orçamento Python. Configure
 o mesmo orçamento na API, worker Laravel e processador; Compose o compartilha
 e a imagem de produção define os dois padrões. Configuração incoerente falha
 antes do envio; configuração Python inválida retorna `analysis_not_configured`.
+Laravel verifica o valor bruto antes de converter: `60garbage`, booleanos e
+prefixos numéricos incompletos não viram um timeout válido.
 
 | Limite | Padrão |
 | --- | --- |
@@ -58,9 +79,20 @@ Ao esgotar o orçamento, Python responde 503 com `analysis_budget_exceeded`,
 antes do timeout do cliente. A rota acompanha `http.disconnect` e cancelamento
 da tarefa ASGI, sinalizando o token usado pelo worker. Esperas de pipe/HTTP
 verificam cancelamento em até 50 ms de execução do escalonador; o subprocesso
-PDF e seus descendentes são terminados/recolhidos, e o cliente HTTP é fechado.
+PDF e seus descendentes são terminados/recolhidos. O pai do provedor consulta
+o token a cada 25 ms, envia TERM ao grupo, aguarda no máximo 100 ms de graça,
+envia KILL inclusive aos descendentes resistentes e recolhe os processos antes
+de liberar o lease. A rota pode responder enquanto esse recolhimento termina.
+O runtime é **Linux**: usa `PR_SET_CHILD_SUBREAPER` para adotar órfãos e `waitpid`
+apenas no grupo pertencente à operação, inclusive na limpeza de PDFs posteriores.
+Se a adoção não estiver disponível, o provedor real falha fechado com
+`provider_not_configured`. O teste da imagem cobre DNS realmente bloqueado e
+recolhimento sem processos vivos/zumbis sob 512 MiB/0,1 CPU.
 São limites cooperativos de aplicação, sujeitos à disponibilidade de CPU e ao
 tempo de liberação de recursos, não garantias de tempo real sob saturação.
+Fechar/matar a conexão local não cancela necessariamente uma geração que o
+serviço remoto já aceitou. Escalada de privilégios/escape do grupo de processos
+não fazem parte deste adaptador; nenhuma instrução de documento vira código.
 
 Para o runtime de 512 MiB/0,1 CPU há **uma análise ativa por processo**, sem fila
 interna. Um registro atômico rejeita o mesmo UUID ou hash de chave com 503

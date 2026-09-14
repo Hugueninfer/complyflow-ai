@@ -19,7 +19,7 @@ PUBLIC_ANALYSIS_ERRORS = frozenset({
     'invalid_document', 'document_hash_mismatch', 'duplicate_identifiers',
     'analysis_limit_exceeded', 'invalid_pdf', 'encrypted_pdf', 'pdf_limit_exceeded',
     'ocr_unavailable', 'ocr_failed', 'provider_not_configured', 'provider_unavailable',
-    'invalid_provider_response', 'invalid_finding', 'invalid_citation',
+    'invalid_provider_response', 'invalid_provider_request', 'invalid_finding', 'invalid_citation',
 })
 PUBLIC_EXECUTION_ERRORS = frozenset({
     'analysis_budget_exceeded', 'analysis_cancelled', 'analysis_in_progress',

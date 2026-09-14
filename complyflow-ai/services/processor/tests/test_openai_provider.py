@@ -8,14 +8,25 @@ import pytest
 
 from app.schemas import FindingDraft
 from app.execution import ExecutionBudget, ExecutionStopped
+from app.providers.openai_compatible import OpenAICompatibleProvider
 from test_analyze_api import valid_response
 from test_fake_provider import context, requirement
 
 
-def provider_with_response(handler):
-    from app.providers.openai_compatible import OpenAICompatibleProvider
+class InProcessMockProvider(OpenAICompatibleProvider):
+    """Adapter unit-test seam only; production analyze always uses exec isolation."""
 
-    return OpenAICompatibleProvider(
+    def __init__(self, *, transport, **kwargs):
+        super().__init__(**kwargs)
+        self._transport = transport
+
+    def _execute_request(self, payload, budget):
+        return anyio.run(self._request, payload, budget)
+
+
+def provider_with_response(handler):
+
+    return InProcessMockProvider(
         base_url='https://ai.example/v1', api_key='test-only', model='demo-model',
         transport=httpx.MockTransport(handler),
     )
@@ -185,7 +196,7 @@ def test_total_deadline_interrupts_blocked_http_operation_and_closes_resources(m
         async def aclose(self):
             state['transport_closed'] = True
 
-    provider = openai_compatible.OpenAICompatibleProvider(
+    provider = InProcessMockProvider(
         base_url='https://ai.example/v1', api_key='test-only', model='demo',
         transport=BlockingTransport(),
     )
@@ -289,8 +300,7 @@ def test_analysis_stop_cancels_inflight_http_and_closes_resources(stop, phase):
         async def aclose(self):
             state['closed'] = True
 
-    from app.providers.openai_compatible import OpenAICompatibleProvider
-    provider = OpenAICompatibleProvider(base_url='https://ai.example/v1', api_key='test-only', model='demo', transport=Transport())
+    provider = InProcessMockProvider(base_url='https://ai.example/v1', api_key='test-only', model='demo', transport=Transport())
     started = monotonic()
     code = 'analysis_budget_exceeded' if stop == 'deadline' else 'analysis_cancelled'
     with pytest.raises(ExecutionStopped, match=f'^{code}$'):
