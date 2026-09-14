@@ -12,19 +12,15 @@ use App\Http\Controllers\Api\V1\RequirementSetController;
 use App\Http\Controllers\Api\V1\SupplierComparisonController;
 use App\Http\Controllers\Api\V1\SupplierController;
 use App\Http\Controllers\Api\V1\SupplierDecisionController;
-use Illuminate\Support\Facades\DB;
+use App\Http\Controllers\HealthController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/health', function () {
-    DB::select('select 1');
-
-    return response()->json(['status' => 'ready']);
-});
+Route::get('/health', HealthController::class);
 
 Route::middleware('web')->prefix('v1')->group(function (): void {
-    Route::post('/register', [AuthController::class, 'register']);
-    Route::post('/login', [AuthController::class, 'login']);
-    Route::post('/demo-sessions', [DemoSessionController::class, 'store']);
+    Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1,register');
+    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1,login');
+    Route::post('/demo-sessions', [DemoSessionController::class, 'store'])->middleware('throttle:10,1,demo');
     Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
 
     Route::middleware(['auth:sanctum', 'organization'])->group(function (): void {
@@ -38,7 +34,7 @@ Route::middleware('web')->prefix('v1')->group(function (): void {
         Route::patch('/suppliers/{supplier}', [SupplierController::class, 'update']);
         Route::delete('/suppliers/{supplier}', [SupplierController::class, 'destroy']);
         Route::get('/suppliers/{supplier}/documents', [DocumentController::class, 'index']);
-        Route::post('/suppliers/{supplier}/documents', [DocumentController::class, 'store']);
+        Route::post('/suppliers/{supplier}/documents', [DocumentController::class, 'store'])->middleware('throttle:30,1,upload');
         Route::get('/documents/{document}', [DocumentController::class, 'show']);
         Route::post('/suppliers/{supplier}/analyses', [AnalysisController::class, 'store'])->middleware('throttle:30,1');
         Route::get('/analyses/{analysis}', [AnalysisController::class, 'show']);

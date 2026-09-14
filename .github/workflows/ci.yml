@@ -1,0 +1,41 @@
+name: Verify ComplyFlow AI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    working-directory: complyflow-ai
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Build development and Chromium images
+        run: docker compose --profile e2e build
+      - name: Verify contracts, domain, UI and real browser journey
+        run: bash scripts/verify.sh
+      - name: Audit PHP and frontend dependencies
+        run: |
+          docker compose run --rm --no-deps api composer audit --no-interaction
+          docker compose run --rm --no-deps web npm audit
+          docker run --rm complyflow-e2e npm audit
+      - name: Audit locked Python dependencies and validate Render schema
+        run: |
+          python3 -m venv /tmp/complyflow-validation
+          /tmp/complyflow-validation/bin/pip install pip-audit jsonschema pyyaml
+          /tmp/complyflow-validation/bin/pip-audit -r services/processor/requirements-test.lock
+          curl --fail --silent --show-error https://render.com/schema/render.yaml.json -o /tmp/complyflow-render-schema.json
+          /tmp/complyflow-validation/bin/python -c 'import json,jsonschema,yaml; jsonschema.validate(yaml.safe_load(open("render.yaml")), json.load(open("/tmp/complyflow-render-schema.json")))'
+      - name: Production smoke at 512 MiB and 0.1 CPU
+        run: bash scripts/production-smoke.sh
+      - name: Stop disposable services
+        if: always()
+        run: docker compose --profile e2e down -v

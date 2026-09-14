@@ -1,0 +1,89 @@
+# ComplyFlow AI
+
+Da evidência documental à decisão humana. Plataforma multi-tenant que organiza fornecedores, checklists versionados e PDFs numa matriz rastreável: sugestão assistiva, confiança, página, trecho, revisão e decisão final separadas.
+
+Case de portfólio funcional em português, com Laravel, Vue e FastAPI. A demonstração funciona sem chave paga e usa somente dados fictícios. O projeto está preparado para publicação no Render; este repositório não afirma que existe uma instância pública publicada.
+
+![Dashboard com dados fictícios de QA](docs/screenshots/dashboard.png)
+
+## O que experimentar
+
+Entre em **Explorar demonstração**, abra **NovaGuard Facilities**, siga para a matriz, inspecione as evidências e revise os quatro requisitos. A decisão final só aparece para uma pessoa autorizada após a revisão obrigatória. Em **Auditoria**, confira o registro preservado; em **Comparações**, veja dois fornecedores sob a mesma versão do checklist.
+
+Cada visitante recebe organização e sessão próprias por 24 horas. Há três fornecedores, uma análise aguardando revisão, um histórico humano fictício e os quatro estados `met`, `partial`, `missing`, `inconclusive`. Não há senha pública: a demo cria um reviewer. Cadastro de conta owner e início da primeira análise estão disponíveis pela API; a interface atual oferece login/demo, cadastros de negócio, upload, acompanhamento, retry e revisão. [Dados e cotas da demo](docs/demo.md) · [API](docs/api.md).
+
+![Evidência, sugestão da IA e correção humana preservadas](docs/screenshots/human-review.png)
+
+As capturas locais foram realizadas nas telas implementadas, com dados de QA fictícios, seguindo a referência visual Stitch “Sovereign Compliance Interface”. Valores dessas capturas podem diferir do seed atual. Fontes e ícones são servidos localmente.
+
+[Ver também a comparação lado a lado](docs/screenshots/comparison.png).
+
+## Arquitetura e stack
+
+```mermaid
+flowchart LR
+    Pessoa[Pessoa autorizada] --> Vue[Vue 3 · TypeScript · Pinia]
+    Vue --> API[Laravel 13 · PHP 8.4 · Sanctum]
+    API --> DB[(PostgreSQL 17 · pgvector)]
+    API --> Fila[Fila PostgreSQL]
+    Fila --> Worker[Worker Laravel]
+    Worker -->|HTTP com HMAC| Python[FastAPI · Python 3.12]
+    Python --> PDF[PDF · páginas · chunks · busca híbrida]
+    PDF --> Provider[Fake determinístico ou adaptador opcional]
+    Provider -->|Resultados validados| Worker
+    Worker --> DB
+    Pessoa -->|Revisão e decisão explícitas| API
+```
+
+Laravel impõe tenants, permissões, idempotência, persistência e auditoria. FastAPI extrai e valida documentos em processos com limites, recupera contexto e produz sugestões estruturadas. A busca combina vetores determinísticos de 384 dimensões com correspondência textual; não promete embeddings semânticos de um modelo treinado. PDFs ficam em `bytea` no banco, sobrevivendo ao reinício do container. [Arquitetura e escolhas](docs/architecture.md).
+
+## Executar localmente
+
+Pré-requisitos: Git, Docker Engine/Desktop com Compose v2, OpenSSL e portas 5173/8000/8001 livres. PHP, Composer, Node e Python rodam em containers. Execute os comandos dentro desta pasta `complyflow-ai/`:
+
+```bash
+cp .env.example .env
+export PROCESSOR_HMAC_SECRET="$(openssl rand -hex 32)"
+docker compose up --build
+```
+
+O worker aplica migrations e seed. Aguarde os serviços; abra [localhost:5173](http://localhost:5173). O segredo exportado vale para este shell; para reutilizá-lo em outros terminais, configure seu próprio valor em `PROCESSOR_HMAC_SECRET` no `.env` local, sem versioná-lo. O Laravel gera sua APP_KEY local automaticamente. A senha `complyflow` do banco Compose é exclusivamente de desenvolvimento e o banco não publica uma porta no host.
+
+O provedor `fake` é o padrão e não chama serviços externos. Downloads de imagens/pacotes exigem internet na preparação. A demo usa resultados fictícios pré-carregados; o pipeline de análise de novos PDFs é executado pela fila na conta owner.
+
+## Testar
+
+**Use um banco local descartável:** a suíte Laravel e `verify.sh` recriam as tabelas do Compose. Interrompa o worker antes dos testes se ele estiver ativo.
+
+```bash
+docker compose stop queue
+docker compose --profile e2e build
+bash scripts/verify.sh
+bash scripts/production-smoke.sh
+```
+
+O primeiro script executa Laravel, Python, Vue, typecheck, lint, build, contrato HMAC entre linguagens e Playwright real. Depois restaura o seed e o executa novamente para verificar idempotência. O segundo constrói a imagem final e verifica health, SPA/deep links, CSRF, demo, reinício e E2E sob 512 MiB/0,1 CPU; ao terminar remove apenas seu projeto de smoke. Requer Python 3 no host para o pequeno cliente HTTP. A [CI](../.github/workflows/ci.yml) repete essas verificações sem credenciais externas.
+
+Para parar: `docker compose down`. Para apagar os dados locais de desenvolvimento: `docker compose down -v` (irreversível para esse volume; não use sobre uma base importante).
+
+## Segurança e soberania humana
+
+- UUIDs públicos, escopo obrigatório por organização, policies e RBAC no servidor; testes de IDOR entre organizações e demos.
+- Cookies de sessão e CSRF na mesma origem. Em produção: cookies Secure/HttpOnly, CSP e cabeçalhos defensivos; segredos gerados por ambiente.
+- Upload limitado a PDF de 5 MiB, hash/deduplicação, cotas, extração com limites de tempo/memória e conteúdo tratado como não confiável.
+- Achados aceitos somente com schema, página, trecho e offsets coerentes; `missing` exige descrição da busca. A IA nunca aprova ou reprova fornecedores.
+- Revisões, decisões e auditoria append-only; encadeamento de hashes detecta alterações locais, com os limites explicitados na interface.
+
+[Modelo de segurança e riscos residuais](docs/security.md) · [Revisão humana e auditoria](docs/human-review-audit.md) · [API](docs/api.md).
+
+## Render gratuito
+
+O [guia de publicação](docs/render-free-deploy.md) descreve o Blueprint, geração dos segredos, banco privado, verificação e recriação. Uma imagem executa Nginx, PHP-FPM, worker e FastAPI; OCR fica desativado. O plano é uma demonstração limitada: web com 512 MB/0,1 CPU, hibernação após 15 minutos e cold start aproximado de um minuto. O Postgres gratuito tem 1 GB de armazenamento, expira em 30 dias e não oferece backups. [Limites oficiais consultados em 14/09/2026](https://render.com/docs/free).
+
+## Limitações e próximos passos
+
+Ainda faltam telas de cadastro de conta e de seleção/envio da primeira análise; ambas as operações já existem e são testadas pela API. Não há consultas reais a órgãos públicos, certificações de segurança, assinatura digital ou homologação automática. O fake não mede conformidade real. OCR não está conectado ao pipeline público; PDFs somente imagem podem resultar sem evidência. O plano gratuito não é uma oferta de produção com SLA, e a capacidade sob carga não foi certificada.
+
+Próximos passos: armazenamento de objetos, serviços/filas separados, cache compartilhado de replay antes de escalar, outbox e reconciliação operacional de jobs interrompidos, paginação de matrizes grandes, limpeza periódica de demos, backups e observabilidade sem conteúdo sensível. Existem quatro avisos de depreciação Python sobre fork em processo multithread e um sobre TestClient/httpx; a suíte passa e esses pontos exigem evolução antes de ampliar concorrência.
+
+Contribuições: [CONTRIBUTING.md](CONTRIBUTING.md). Código e material original: [MIT](LICENSE). Dependências mantêm suas próprias licenças; fontes locais usam OFL. [Revisão de dependências e licenças](docs/dependency-review.md).

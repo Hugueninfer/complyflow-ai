@@ -19,7 +19,7 @@ docker compose exec web npm run test:session-http
 
 O seed padrão fornece os papéis/permissões necessários para entrar na demo. O smoke HTTP cria uma demo isolada, testa CSRF, restauração por cookie e logout; a organização criada expira em 24 horas. Ele usa `http://localhost:5173`, configurável por `WEB_BASE_URL`. `artisan serve --no-reload` preserva as variáveis de ambiente do Compose no processo HTTP filho; sem esse argumento, o Laravel pode descartar `DB_*` e carregar o SQLite do `.env` local.
 
-Para Vite fora do Compose, defina `API_PROXY_TARGET=http://localhost:8000`. No Compose, `/api` e `/sanctum` são encaminhados para `http://api:8000`, mantendo o navegador na mesma origem. Na produção, Laravel serve a SPA e a API sob o mesmo domínio.
+Para Vite fora do Compose, defina `API_PROXY_TARGET=http://localhost:8000`. No Compose, `/api` e `/sanctum` são encaminhados para `http://api:8000`, mantendo o navegador na mesma origem. Na produção, Nginx serve a SPA e encaminha a API ao Laravel sob o mesmo domínio.
 
 ## Contratos
 
@@ -34,7 +34,7 @@ O cliente envia `credentials: include`, inicializa `/sanctum/csrf-cookie` antes 
 
 `useAuthStore()` oferece `session`, `isAuthenticated`, `can(permission)`, `bootstrap()`, `refresh()`, `login(email, password)`, `startDemo()` e `logout()`. O bootstrap chama `GET /api/v1/me`. Login e demo preservam seus contratos anteriores e em seguida consultam `/me`, que fornece `{ user, organization, role, permissions, demo }`. Somente dados autenticados pelo servidor alimentam organização, papel e permissões. Nenhum token, senha ou papel é persistido em Web Storage. A senha do formulário é descartada após a tentativa.
 
-`createAppRouter(pinia, history?)` instala os guards `meta.requiresAuth` e `meta.permission`; esses guards servem à experiência, enquanto o backend impõe autorização e isolamento. A rota `/login` é pública. Fornecedores, dossiê, requisitos e upload têm telas reais; dashboard, análises, revisões, comparações e auditoria ainda usam `WorkspaceView` até as tarefas 15–16.
+`createAppRouter(pinia, history?)` instala os guards `meta.requiresAuth` e `meta.permission`; esses guards servem à experiência, enquanto o backend impõe autorização e isolamento. A rota `/login` é pública. Fornecedores, dossiê, requisitos, upload, dashboard, análises, matriz, revisões, comparações e auditoria têm telas integradas à API.
 
 ### Fornecedores, requisitos e documentos
 
@@ -57,4 +57,4 @@ As ações dependem de `supplier.create/update`, `requirement.create/update/publ
 
 Sidebar fixa de 260px em desktop (1280px+); drawer em tablet/mobile, com foco inicial, ciclo Tab/Shift+Tab, Escape, restauração de foco, fundo `inert` e bloqueio do scroll. O shell inclui skip link, títulos e navegação com nomes acessíveis. Formulários têm labels, autocomplete, erros anunciados, carregamento e bloqueio de envios concorrentes. Foco visível e `prefers-reduced-motion` são tratados globalmente.
 
-O login, shell e tokens seguem `Sovereign Compliance Interface` e as referências locais do Stitch: navy estrutural, ação teal, índigo reservado à IA, cartões de evidência e marca SVG. As métricas ilustrativas não são exibidas como dados reais; a prévia é identificada como fictícia. Selos de certificação, SSO, recuperação de senha e integrações ausentes foram omitidos. Dashboard e demais métricas reais pertencem às próximas tarefas.
+O login, shell e tokens seguem `Sovereign Compliance Interface` e as referências locais do Stitch: navy estrutural, ação teal, índigo reservado à IA, cartões de evidência e marca SVG. As métricas do dashboard vêm da API; a demo é identificada como fictícia. Selos de certificação, SSO, recuperação de senha e integrações ausentes foram omitidos.

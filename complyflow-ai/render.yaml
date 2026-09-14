@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+services:
+  - type: web
+    name: complyflow-ai
+    runtime: docker
+    plan: free
+    region: oregon
+    rootDir: complyflow-ai
+    dockerContext: .
+    dockerfilePath: ./infra/docker/production/Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_KEY_MATERIAL
+        generateValue: true
+      - key: PROCESSOR_HMAC_SECRET
+        generateValue: true
+      - key: DB_URL
+        fromDatabase:
+          name: complyflow-db
+          property: connectionString
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: AI_PROVIDER
+        value: fake
+databases:
+  - name: complyflow-db
+    databaseName: complyflow
+    user: complyflow
+    plan: free
+    region: oregon
+    postgresMajorVersion: "17"
+    ipAllowList: []

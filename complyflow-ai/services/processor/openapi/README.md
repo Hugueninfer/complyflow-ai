@@ -39,9 +39,9 @@ nonce store. Restarting the process clears this cache.
 The canonical fixture `hmac-test-vector.json` contains exact body bytes
 (`body_base64`, also readable as `body_utf8`), timestamp, nonce, a clearly
 test-only secret, SHA-256 digest, signed message, and expected signature.
-It was generated independently with Node `crypto`; Python tests verify it.
-Task 9 should decode the body bytes, sign them, and compare the literal
-signature. Freeze the clock at the fixture timestamp for an HTTP test.
+It was generated independently with Node `crypto`; PHP and Python tests verify it.
+`tests/contracts/processor-hmac.sh` decodes the body bytes, signs them, and compares
+the literal signature with the clock fixed at the fixture timestamp.
 The fixture PDF data is only a header, suitable for contract validation;
 it is not a complete document for the future extraction pipeline.
 
@@ -53,20 +53,20 @@ do not confer authorization. `requires_human_review` is always explicitly
 positions with an exclusive end greater than the start. Chunk offsets are
 page-relative with end >= start; `index` is zero-based and embeddings
 contain exactly 384 finite numbers. Pages use one-based `page_number`.
-The pipeline must additionally validate document hashes/base64, real
+The pipeline additionally validates document hashes/base64, real
 page membership, evidence text/offset correspondence, and request/response
-IDs before returning accepted artifacts (Tasks 7–8). Laravel repeats
-boundary/evidence validation before persisting results (Task 9).
+IDs before returning accepted artifacts. Laravel repeats
+boundary/evidence validation before persisting results.
 
 Responses have these stable shapes:
 
-- 200: `AnalyzeResponse`, reserved for the pipeline added in Task 8.
+- 200: `AnalyzeResponse` with validated findings, pages and chunks.
 - 401: `{"detail":"invalid_authentication"}` for missing, malformed,
   invalid, expired, or replayed authentication.
 - 422: `{"detail":"invalid_request"}` for invalid JSON/schema, with no
   input/document echo.
 - 503: `{"detail":"authentication_unavailable"}` for missing secret or
-  full nonce cache; `{"detail":"analysis_not_available"}` for valid
-  requests until Task 8 installs the pipeline.
+  full nonce cache; provider/configuration failures use sanitized public codes
+  such as `provider_not_configured`, `provider_unavailable` or `analysis_failed`.
 
 Neither request bodies nor secrets are logged by these handlers.

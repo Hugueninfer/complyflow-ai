@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: smoke
+      POSTGRES_USER: smoke
+      POSTGRES_PASSWORD: local-smoke-only
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U smoke -d smoke"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  app:
+    image: complyflow-ai:test
+    build:
+      context: ../../..
+      dockerfile: infra/docker/production/Dockerfile
+    mem_limit: 512m
+    cpus: 0.1
+    ports: ["127.0.0.1:18080:10000"]
+    environment:
+      APP_KEY_MATERIAL: ${SMOKE_APP_KEY_MATERIAL:?Generate SMOKE_APP_KEY_MATERIAL}
+      PROCESSOR_HMAC_SECRET: ${SMOKE_HMAC_SECRET:?Generate SMOKE_HMAC_SECRET}
+      APP_URL: http://localhost:18080
+      SESSION_SECURE_COOKIE: "false"
+      DB_URL: postgres://smoke:local-smoke-only@postgres:5432/smoke
+    stop_grace_period: 110s
+    depends_on:
+      postgres:
+        condition: service_healthy
