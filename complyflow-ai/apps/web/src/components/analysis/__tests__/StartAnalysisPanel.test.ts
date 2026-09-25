@@ -8,11 +8,12 @@ import { fakeServer, json, session } from '../../../test/server'
 import { pdfDocument, requirementSet, supplier } from '../../../test/workspace'
 import { run } from '../../../test/analysis'
 import { useAuthStore } from '../../../stores/auth'
+import type { Session } from '../../../types/domain'
 
 const ready = { ...pdfDocument, status: 'ready' }
 const published = { ...requirementSet, status: 'published', published_at: '2026-09-13T00:00:00Z' }
 function page(documents = [ready]) { return { data: documents, meta: { current_page: 1, last_page: 1, total: documents.length } } }
-async function openPanel(handler?: Parameters<typeof fakeServer>[0]) {
+async function openPanel(handler?: Parameters<typeof fakeServer>[0], access: Pick<Session, 'role' | 'permissions'> = { role: 'owner', permissions: ['analysis.run', 'requirement.view', 'requirement.create', 'requirement.publish', 'document.view', 'document.upload'] }) {
   fakeServer((path, init) => handler ? handler(path, init) : path === '/api/v1/requirement-sets' ? json({ data: [published] }) : json(page()))
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/fornecedores/:id', component: { template: '<p>Dossiê</p>' } },
@@ -21,7 +22,7 @@ async function openPanel(handler?: Parameters<typeof fakeServer>[0]) {
     { path: '/fornecedores/:id/documentos', component: { template: '<p>Upload</p>' } },
   ] })
   const pinia = createPinia()
-  useAuthStore(pinia).session = { ...session, role: 'owner', permissions: ['analysis.run', 'requirement.view', 'document.view', 'document.upload'] }
+  useAuthStore(pinia).session = { ...session, ...access }
   await router.push(`/fornecedores/${supplier.id}`)
   const view = render(StartAnalysisPanel, { props: { supplierId: supplier.id }, global: { plugins: [router, pinia] } })
   return { router, ...view }
@@ -45,12 +46,30 @@ describe('Start analysis selection', () => {
     expect(screen.getByRole('button', { name: 'Iniciar análise documental' })).toBeDisabled()
   })
 
-  it('explains empty prerequisites and provides actual creation/upload routes', async () => {
+  it('offers an owner with create/publish permission the actual creation/upload routes', async () => {
     await openPanel(path => path === '/api/v1/requirement-sets' ? json({ data: [requirementSet] }) : json(page([])))
     expect(await screen.findByText(/nenhuma versão publicada/i)).toBeVisible()
     expect(screen.getByRole('link', { name: /criar e publicar/i })).toHaveAttribute('href', '/requisitos')
     expect(screen.getByRole('link', { name: /enviar pdf/i })).toHaveAttribute('href', `/fornecedores/${supplier.id}/documentos`)
     expect(screen.getByRole('button', { name: 'Iniciar análise documental' })).toBeDisabled()
+  })
+
+  it('offers an analyst draft creation without implying they can publish', async () => {
+    await openPanel(path => path === '/api/v1/requirement-sets' ? json({ data: [] }) : json(page()), {
+      role: 'analyst', permissions: ['analysis.run', 'requirement.view', 'requirement.create', 'requirement.update', 'document.view', 'document.upload'],
+    })
+    expect(await screen.findByRole('link', { name: /criar rascunho/i })).toHaveAttribute('href', '/requisitos')
+    expect(screen.queryByRole('link', { name: /publicar/i })).not.toBeInTheDocument()
+    expect(screen.getByText(/solicite a publicação ao administrador da organização/i)).toBeVisible()
+  })
+
+  it('provides only publication guidance with read-only requirement permissions', async () => {
+    await openPanel(path => path === '/api/v1/requirement-sets' ? json({ data: [] }) : json(page()), {
+      role: 'reviewer', permissions: ['requirement.view', 'document.view'],
+    })
+    expect(await screen.findByText(/nenhuma versão publicada/i)).toBeVisible()
+    expect(screen.queryByRole('link', { name: /criar|publicar/i })).not.toBeInTheDocument()
+    expect(screen.getByText(/solicite ao administrador da organização um conjunto publicado/i)).toBeVisible()
   })
 
   it.each([202, 200])('opens the returned run for a %i response and sends a UUID key once', async status => {

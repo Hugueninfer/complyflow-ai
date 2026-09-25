@@ -222,12 +222,11 @@ onBeforeUnmount(() => { active = false; lifecycle++; generation++; readControlle
           v-if="!requirementSets.length"
           class="prerequisite-note"
         >
-          Nenhuma versão publicada. <RouterLink
-            v-if="auth.can('requirement.view')"
-            to="/requisitos"
-          >
-            Criar e publicar conjunto
-          </RouterLink><span v-else>Solicite ao administrador um conjunto publicado.</span>
+          Nenhuma versão publicada. <template v-if="auth.can('requirement.view') && auth.can('requirement.create')">
+            <RouterLink to="/requisitos">
+              {{ auth.can('requirement.publish') ? 'Criar e publicar conjunto' : 'Criar rascunho' }}
+            </RouterLink><span v-if="!auth.can('requirement.publish')">. Solicite a publicação ao administrador da organização.</span>
+          </template><span v-else>Solicite ao administrador da organização um conjunto publicado.</span>
         </p>
       </div>
 

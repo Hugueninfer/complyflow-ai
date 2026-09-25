@@ -104,7 +104,7 @@ describe('Supplier workspace', () => {
       ? json({ data: [] })
       : path.includes('/documents')
         ? json({ data: [], meta: { current_page: 1, last_page: 1, total: 0 } })
-        : json({ data: supplier }), ['supplier.view', 'document.view', 'document.upload', 'analysis.view', 'analysis.run', 'requirement.view', 'requirement.publish'])
+        : json({ data: supplier }), ['supplier.view', 'document.view', 'document.upload', 'analysis.view', 'analysis.run', 'requirement.view', 'requirement.create', 'requirement.publish'])
     expect(await screen.findByRole('link', { name: /publicar conjunto/i })).toHaveAttribute('href', '/requisitos')
     expect(screen.getByRole('link', { name: /enviar pdf/i })).toHaveAttribute('href', `/fornecedores/${supplier.id}/documentos`)
     expect(screen.getByRole('button', { name: /iniciar análise documental/i })).toBeDisabled()
