@@ -416,6 +416,57 @@ class RequirementSetApiTest extends TestCase
         ]);
     }
 
+    public function test_name_is_reserved_across_versions_and_lineages_but_case_remains_significant(): void
+    {
+        $owner = $this->userWithRole($this->organization('Names'), 'owner');
+        $a = $this->createSet($owner, 'A');
+        $b = $this->createSet($owner, 'B');
+        $this->postJson('/api/v1/requirement-sets/'.$a.'/publish')->assertOk();
+        $this->postJson('/api/v1/requirement-sets/'.$b.'/publish')->assertOk();
+        $b2 = $this->postJson('/api/v1/requirement-sets/'.$b.'/versions')->assertCreated()->json('data.id');
+        $this->putJson('/api/v1/requirement-sets/'.$b2, ['name' => ' A '])
+            ->assertUnprocessable()->assertJsonValidationErrors('name');
+        $this->putJson('/api/v1/requirement-sets/'.$b2, ['name' => 'B'])->assertOk();
+        $this->putJson('/api/v1/requirement-sets/'.$b2, ['name' => 'a'])->assertOk();
+        $this->postJson('/api/v1/requirement-sets/'.$b2.'/publish')->assertOk();
+        $this->postJson('/api/v1/requirement-sets/'.$a.'/versions')->assertCreated()->assertJsonPath('data.name', 'A');
+        $this->postJson('/api/v1/requirement-sets', ['name' => 'a', 'requirements' => [$this->requirement('R', 'R', 1)]])
+            ->assertUnprocessable()->assertJsonValidationErrors('name');
+    }
+
+    public function test_deleted_other_lineage_name_stays_reserved_and_foreign_tenant_does_not_reserve_it(): void
+    {
+        $owner = $this->userWithRole($this->organization('Names'), 'owner');
+        $root = $this->createSet($owner, 'First');
+        $this->postJson('/api/v1/requirement-sets/'.$root.'/publish')->assertOk();
+        $v2 = $this->postJson('/api/v1/requirement-sets/'.$root.'/versions')->assertCreated()->json('data.id');
+        $this->putJson('/api/v1/requirement-sets/'.$v2, ['name' => 'Reserved'])->assertOk();
+        $this->deleteJson('/api/v1/requirement-sets/'.$v2)->assertNoContent();
+        $other = $this->createSet($owner, 'Other');
+        $this->putJson('/api/v1/requirement-sets/'.$other, ['name' => 'Reserved'])
+            ->assertUnprocessable()->assertJsonValidationErrors('name');
+        $this->postJson('/api/v1/requirement-sets', ['name' => 'Reserved', 'requirements' => [$this->requirement('R', 'R', 1)]])
+            ->assertUnprocessable()->assertJsonValidationErrors('name');
+        $this->createSet($this->userWithRole($this->organization('Foreign names'), 'owner'), 'Reserved');
+    }
+
+    public function test_legacy_cross_lineage_name_collision_cannot_publish_or_version_and_draft_can_be_repaired(): void
+    {
+        $owner = $this->userWithRole($this->organization('Legacy names'), 'owner');
+        $a = $this->createSet($owner, 'A');
+        $b = $this->createSet($owner, 'B');
+        $this->postJson('/api/v1/requirement-sets/'.$a.'/publish')->assertOk();
+        $this->postJson('/api/v1/requirement-sets/'.$b.'/publish')->assertOk();
+        $b2 = $this->postJson('/api/v1/requirement-sets/'.$b.'/versions')->assertCreated()->json('data.id');
+        DB::table('requirement_sets')->where('public_id', $b2)->update(['name' => 'A']);
+        $this->postJson('/api/v1/requirement-sets/'.$b2.'/publish')->assertUnprocessable()->assertJsonValidationErrors('name');
+        $this->postJson('/api/v1/requirement-sets/'.$a.'/versions')->assertUnprocessable()->assertJsonValidationErrors('name');
+        $this->assertDatabaseHas('requirement_sets', ['public_id' => $b2, 'status' => 'draft']);
+        $this->putJson('/api/v1/requirement-sets/'.$b2, ['name' => 'Repaired'])->assertOk();
+        $this->postJson('/api/v1/requirement-sets/'.$b2.'/publish')->assertOk();
+        $this->postJson('/api/v1/requirement-sets/'.$a.'/versions')->assertCreated();
+    }
+
     private function createSet(User $user, string $name = 'Vendor Security'): string
     {
         return $this->actingAs($user)->postJson('/api/v1/requirement-sets', [

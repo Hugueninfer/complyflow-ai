@@ -10,6 +10,7 @@ use App\Models\Organization;
 use App\Models\RequirementSet;
 use App\Models\Supplier;
 use App\Support\CurrentOrganization;
+use App\Support\RequirementNames;
 use App\Support\RequirementWeights;
 use Illuminate\Support\Facades\DB;
 
@@ -27,6 +28,7 @@ class StartAnalysis
             Organization::whereKey($tenant)->lock('for no key update')->firstOrFail();
             $supplier = Supplier::wherePublicIdForCurrentOrganization($supplier->public_id)->lockForUpdate()->firstOrFail();
             $set = RequirementSet::wherePublicIdForCurrentOrganization($setId)->where('status', 'published')->lockForUpdate()->firstOrFail();
+            RequirementNames::validate($set->name, $set);
             $requirementCount = $set->requirements()->forCurrentOrganization()->count();
             abort_unless($requirementCount >= 1 && $requirementCount <= 100, 422, 'Checklist must contain between 1 and 100 requirements.');
             RequirementWeights::validate($set);

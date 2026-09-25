@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreRequirementSetRequest;
 use App\Models\Requirement;
 use App\Models\RequirementSet;
+use App\Support\RequirementNames;
 use App\Support\RequirementWeights;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -34,6 +35,8 @@ class RequirementSetController extends Controller
 
         try {
             $set = DB::transaction(function () use ($request): RequirementSet {
+                RequirementNames::lockOrganization();
+                RequirementNames::validate($request->validated('name'));
                 $set = RequirementSet::query()->create([
                     'name' => $request->validated('name'),
                     'version' => 1,
@@ -70,6 +73,7 @@ class RequirementSetController extends Controller
                 }
 
                 if ($request->has('name')) {
+                    RequirementNames::validate($request->validated('name'), $set);
                     $set->update(['name' => $request->validated('name')]);
                 }
 
@@ -96,6 +100,7 @@ class RequirementSetController extends Controller
                 abort(409, 'Only draft requirement sets can be published.');
             }
 
+            RequirementNames::validate($set->name, $set);
             RequirementWeights::validate($set);
             $set->update(['status' => 'published', 'published_at' => now()]);
 
@@ -116,6 +121,7 @@ class RequirementSetController extends Controller
                     abort(409, 'Only published requirement sets can be versioned.');
                 }
 
+                RequirementNames::validate($source->name, $source);
                 $root = $this->lineageRoot($source);
                 // resolve(lock: true) holds the root before the version: all
                 // lineage mutations serialize before checking current state.
@@ -177,7 +183,8 @@ class RequirementSetController extends Controller
             return $set;
         }
 
-        // Discover ancestry without taking child locks, then acquire root -> version.
+        // Serialize names across lineages before acquiring root -> version.
+        RequirementNames::lockOrganization();
         $root = $this->lineageRoot($set);
         RequirementSet::forCurrentOrganization()->whereKey($root->id)->lockForUpdate()->firstOrFail();
 

@@ -5,6 +5,20 @@ import { json } from '../../test/server'
 import { openWorkspace, requirementSet } from '../../test/workspace'
 
 describe('Requirement lifecycle', () => {
+  it('preserves a conflicting name and focuses the server field error when another lineage owns it', async () => {
+    await openWorkspace('/requisitos', (_path, init) => init.method === 'PUT'
+      ? json({ errors: { name: ['This name belongs to another lineage.'] } }, 422)
+      : json({ data: [requirementSet] }))
+    await fireEvent.click(await screen.findByRole('button', { name: 'Editar rascunho' }))
+    const name = screen.getByLabelText('Nome do conjunto')
+    await fireEvent.update(name, 'Nome reservado')
+    await fireEvent.submit(screen.getByRole('form', { name: 'Editor de requisitos' }))
+    await waitFor(() => expect(name).toHaveAttribute('aria-invalid', 'true'))
+    expect(name).toHaveValue('Nome reservado')
+    expect(name).toHaveAccessibleDescription('Verifique este campo.')
+    expect(name).toHaveFocus()
+  })
+
   it.each([0, -1, 0.0001])('keeps an invalid weight %s editable and identifies the field before saving', async (weight) => {
     await openWorkspace('/requisitos', () => json({ data: [requirementSet] }))
     await fireEvent.click(await screen.findByRole('button', { name: 'Editar rascunho' }))

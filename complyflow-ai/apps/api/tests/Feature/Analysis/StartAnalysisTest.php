@@ -6,6 +6,7 @@ use App\Jobs\ProcessAnalysis;
 use App\Models\AnalysisRun;
 use App\Models\RequirementSet;
 use App\Services\Processor\ProcessorClient;
+use App\Support\CurrentOrganization;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -13,6 +14,18 @@ use Illuminate\Support\Str;
 
 class StartAnalysisTest extends AnalysisTestCase
 {
+    public function test_legacy_cross_lineage_name_collision_rejects_analysis_before_quota_or_queue(): void
+    {
+        $demo = $this->demo();
+        app(CurrentOrganization::class)->set($this->organization);
+        $other = RequirementSet::create(['name' => 'Other', 'version' => 1, 'status' => 'published']);
+        RequirementSet::create(['parent_id' => $other->id, 'name' => $this->set->name, 'version' => 2, 'status' => 'published']);
+        $this->start()->assertUnprocessable()->assertJsonValidationErrors('name');
+        $this->assertSame(0, $demo->fresh()->analyses_used);
+        $this->assertDatabaseCount('analysis_runs', 0);
+        Queue::assertNothingPushed();
+    }
+
     public function test_legacy_published_zero_weight_is_rejected_before_queue_and_quota(): void
     {
         $demo = $this->demo();

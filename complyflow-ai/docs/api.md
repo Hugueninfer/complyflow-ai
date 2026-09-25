@@ -34,6 +34,17 @@ O contrato interno `POST /v1/analyze` é [OpenAPI 3.1](../services/processor/ope
 
 Uma nova versão parte da última versão publicada ativa da linhagem e exige ausência de rascunho ativo. O número é `max(version) + 1` considerando também exclusões lógicas; v1 publicada → v2 rascunho → excluir v2 → criar a partir de v1 produz v3. Renomear uma versão não muda sua linhagem. Fonte obsoleta, fonte não publicada ou rascunho ativo retorna 409; recurso de outro tenant ou excluído retorna 404; falta de permissão retorna 403. Escritas da linhagem adquirem locks na ordem raiz → versão. Chamadas concorrentes são serializadas: uma cria o rascunho (201), a seguinte observa esse rascunho e retorna 409. O índice único permanece como proteção adicional contra colisões.
 
+Um nome pertence a uma única linhagem por organização, independentemente da versão. A comparação mantém a igualdade exata e sensível a maiúsculas do PostgreSQL (`A` e `a` são diferentes), após o tratamento habitual de espaços externos na entrada HTTP. Versões da mesma linhagem podem compartilhar nome; nomes ainda presentes em versões excluídas continuam reservados. Criação e renomeação rejeitam nomes de outra linhagem com 422 em `errors.name`, inclusive em concorrência. Todas as mutações de checklist serializam primeiro a organização com `FOR NO KEY UPDATE`, depois raiz → versão. Essa ordem acompanha análises/decisões e permite os locks `KEY SHARE` das chaves estrangeiras.
+
+Publicação, criação de versão e início de análise também rejeitam colisões legadas com 422 em `errors.name`, antes de congelar o checklist ou criar trabalho/cobrar cota. Não há migração que una linhagens ou reescreva histórico silenciosamente. Um rascunho conflitante pode ser corrigido pelo endpoint de edição usando um nome livre. Colisões que envolvam nomes publicados/excluídos exigem um plano de reparo administrativo explícito, com backup e mapeamento revisado de IDs/linhagens; até esse reparo, as operações afetadas falham de forma segura. Esta consulta somente de leitura identifica nomes com mais de uma raiz após a migration de normalização de linhagens:
+
+```sql
+SELECT organization_id, name, array_agg(DISTINCT COALESCE(parent_id, id)) AS roots
+FROM requirement_sets
+GROUP BY organization_id, name
+HAVING count(DISTINCT COALESCE(parent_id, id)) > 1;
+```
+
 ## Cadastro e primeira análise na SPA
 
 **Criar conta** no login usa `POST /api/v1/register` com `name`, `email`, `organization_name`, `password` (mínimo 12 caracteres) e `password_confirmation` igual. Escolha suas próprias credenciais; não há conta/senha compartilhada. O endpoint inicia a sessão de owner e o frontend consulta `/me` para obter organização, papel e permissões. Campos inválidos recebem feedback associado ao campo; as senhas são limpas após a resposta ou ao alternar o modo de acesso.

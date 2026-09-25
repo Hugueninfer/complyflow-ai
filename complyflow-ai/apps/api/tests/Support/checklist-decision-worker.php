@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\RequirementSetController;
+use App\Http\Requests\StoreRequirementSetRequest;
 use App\Models\RequirementSet;
 use App\Models\Supplier;
 use App\Models\User;
@@ -12,6 +13,8 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 require __DIR__.'/../../vendor/autoload.php';
@@ -42,7 +45,18 @@ if ($barrier === 'insert') {
 }
 
 try {
-    if ($mode === 'version') {
+    if ($mode === 'store') {
+        $payload = ['name' => $document, 'requirements' => [['code' => 'R1', 'title' => 'Criterion', 'category' => 'Compliance', 'weight' => 1, 'evaluation_text' => 'Find evidence']]];
+        $request = StoreRequirementSetRequest::create('/', 'POST', $payload);
+        $request->setValidator(Validator::make($payload, ['name' => 'required|string', 'requirements' => 'required|array']));
+        $response = app(RequirementSetController::class)->store($request);
+        $result = ['status' => $response->getStatusCode(), 'data' => $response->getData(true)['data']];
+    } elseif ($mode === 'rename') {
+        $request = StoreRequirementSetRequest::create('/', 'PUT', ['name' => $document]);
+        $request->setValidator(Validator::make(['name' => $document], ['name' => 'required|string']));
+        $response = app(RequirementSetController::class)->update($request, $source);
+        $result = ['status' => $response->getStatusCode(), 'data' => $response->getData(true)['data']];
+    } elseif ($mode === 'version') {
         $response = app(RequirementSetController::class)->createVersion($source);
         $result = ['status' => $response->getStatusCode(), 'data' => $response->getData(true)['data']];
     } elseif ($mode === 'start') {
@@ -54,6 +68,8 @@ try {
         $result = ['status' => 201, 'id' => $decision->public_id];
     }
     echo json_encode($result)."\n";
+} catch (ValidationException $error) {
+    echo json_encode(['status' => 422, 'errors' => $error->errors()])."\n";
 } catch (QueryException $error) {
     echo json_encode(['status' => 500, 'sqlstate' => $error->errorInfo[0] ?? $error->getCode()])."\n";
 } catch (HttpExceptionInterface $error) {
