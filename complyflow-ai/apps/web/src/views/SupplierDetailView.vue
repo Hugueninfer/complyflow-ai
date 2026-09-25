@@ -8,6 +8,7 @@ import { useAuthStore } from '../stores/auth'
 import ResourceState from '../components/ui/ResourceState.vue'
 import SupplierForm from '../components/suppliers/SupplierForm.vue'
 import DocumentList from '../components/documents/DocumentList.vue'
+import StartAnalysisPanel from '../components/analysis/StartAnalysisPanel.vue'
 const auth = useAuthStore(), route = useRoute(), router = useRouter()
 const supplier = ref<Supplier>(), loading = ref(true), error = ref(''), editing = ref(false), success = ref(''), deleting = ref(false), busy = ref(false), deleteError = ref('')
 const editButton = ref<HTMLButtonElement>(), deleteButton = ref<HTMLButtonElement>(), cancelDelete = ref<HTMLButtonElement>()
@@ -82,6 +83,11 @@ watch(() => route.params.id, load, { immediate: true })
           Este fornecedor ainda não possui análise documental.
         </p>
       </section>
+      <StartAnalysisPanel
+        v-if="auth.can('analysis.run') && !['pending', 'processing'].includes(supplier.latest_analysis?.status ?? '')"
+        :key="supplier.id"
+        :supplier-id="supplier.id"
+      />
       <p
         v-if="success"
         role="status"

@@ -3,6 +3,8 @@ import { defineStore } from 'pinia'
 import { api, ApiError } from '../lib/api'
 import type { Envelope, Session } from '../types/domain'
 
+export interface Registration { name: string; organization_name: string; email: string; password: string; password_confirmation: string }
+
 export const useAuthStore = defineStore('auth', () => {
   const session = ref<Session | null>(null)
   const initialized = ref(false)
@@ -34,7 +36,7 @@ export const useAuthStore = defineStore('auth', () => {
     return boot
   }
 
-  async function enter(path: string, credentials?: { email: string; password: string }) {
+  async function enter(path: string, credentials?: { email: string; password: string } | Registration) {
     if (busy.value) return
     busy.value = true
     bootstrapError.value = ''
@@ -47,7 +49,8 @@ export const useAuthStore = defineStore('auth', () => {
     } finally { busy.value = false }
   }
 
-  async function login(email: string, password: string) { await enter('/login', { email, password }) }
+  async function login(email: string, password: string) { await enter('/login', { email: email.trim().toLowerCase(), password }) }
+  async function register(credentials: Registration) { await enter('/register', { ...credentials, email: credentials.email.trim().toLowerCase() }) }
   async function startDemo() { await enter('/demo-sessions') }
   async function logout() {
     if (busy.value) return
@@ -61,5 +64,5 @@ export const useAuthStore = defineStore('auth', () => {
     } finally { busy.value = false }
   }
 
-  return { session, initialized, bootstrapError, busy, isAuthenticated, can, bootstrap, refresh, login, startDemo, logout, clearSession }
+  return { session, initialized, bootstrapError, busy, isAuthenticated, can, bootstrap, refresh, login, register, startDemo, logout, clearSession }
 })

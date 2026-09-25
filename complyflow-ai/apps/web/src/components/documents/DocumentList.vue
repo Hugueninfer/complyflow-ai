@@ -57,7 +57,7 @@ watch(() => [props.supplierId, props.revision], () => load(1), { immediate: true
             aria-hidden="true"
           /><div>
             <strong class="mono document-filename">{{ document.storage_name }}</strong><p class="muted">
-              PDF · {{ (document.size_bytes / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) }} KiB · {{ ({ uploaded: 'Recebido', processed: 'Processado', failed: 'Falha no processamento' } as Record<string, string>)[document.status] || 'Aguardando processamento' }}
+              PDF · {{ (document.size_bytes / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) }} KiB · {{ ({ ready: 'Pronto para análise', uploaded: 'Recebido', processed: 'Processado', failed: 'Falha no processamento' } as Record<string, string>)[document.status] || 'Aguardando processamento' }}
             </p><details>
               <summary>
                 <Fingerprint

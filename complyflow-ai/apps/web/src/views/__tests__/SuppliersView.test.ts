@@ -2,9 +2,120 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { json } from '../../test/server'
-import { openWorkspace, supplier, pdfDocument } from '../../test/workspace'
+import { openWorkspace, supplier, pdfDocument, requirementSet } from '../../test/workspace'
 
 describe('Supplier workspace', () => {
+  it.each(['completed', 'failed'])('allows a new run after a %s analysis', async status => {
+    await openWorkspace(`/fornecedores/${supplier.id}`, path => {
+      if (path.includes('/documents')) return json({ data: [], meta: { current_page: 1, last_page: 1, total: 0 } })
+      if (path.includes('/requirement-sets')) return json({ data: [] })
+      return json({ data: { ...supplier, latest_analysis: { id: 'previous-run', status } } })
+    }, ['supplier.view', 'analysis.view', 'analysis.run'])
+    expect(await screen.findByRole('heading', { name: 'Iniciar nova análise' })).toBeVisible()
+  })
+
+  it.each(['pending', 'processing'])('directs the user to the existing %s run instead of creating another by accident', async status => {
+    let selections = 0
+    await openWorkspace(`/fornecedores/${supplier.id}`, path => {
+      if (path.includes('/requirement-sets') || path.includes('/documents')) { selections++; return json({ data: [], meta: { current_page: 1, last_page: 1, total: 0 } }) }
+      return json({ data: { ...supplier, latest_analysis: { id: 'current-run', status } } })
+    }, ['supplier.view', 'analysis.view', 'analysis.run'])
+    expect(await screen.findByRole('link', { name: 'Acompanhar análise' })).toHaveAttribute('href', '/analises/current-run')
+    expect(screen.queryByRole('heading', { name: 'Iniciar nova análise' })).not.toBeInTheDocument()
+    expect(selections).toBe(0)
+  })
+
+  it('shows creation only with the server analysis.run permission', async () => {
+    await openWorkspace(`/fornecedores/${supplier.id}`, () => json({ data: supplier }), ['supplier.view', 'analysis.view', 'finding.review'])
+    await screen.findByRole('heading', { name: supplier.name })
+    expect(screen.queryByRole('heading', { name: 'Iniciar nova análise' })).not.toBeInTheDocument()
+  })
+
+  it('returns an expired creation session to login without leaking selection data', async () => {
+    const router = await openWorkspace(`/fornecedores/${supplier.id}`, (path, init) => {
+      if (init.method === 'POST') return json({}, 401)
+      if (path.includes('/requirement-sets')) return json({ data: [{ ...requirementSet, id: 'set', status: 'published' }] })
+      if (path.includes('/documents')) return json({ data: [pdfDocument], meta: { current_page: 1, last_page: 1, total: 1 } })
+      return json({ data: supplier })
+    }, ['supplier.view', 'analysis.view', 'analysis.run'])
+    await fireEvent.update(await screen.findByLabelText('Conjunto de requisitos'), 'set')
+    await fireEvent.click(await screen.findByRole('checkbox'))
+    await fireEvent.submit(screen.getByRole('form', { name: 'Iniciar análise documental' }))
+    await waitFor(() => expect(router.currentRoute.value.path).toBe('/login'))
+    expect(screen.queryByRole('heading', { name: supplier.name, level: 1 })).not.toBeInTheDocument()
+  })
+  it('starts the first analysis with a published checklist, selected PDFs and an idempotency key', async () => {
+    const published = { ...requirementSet, id: 'ed9909e1-8af8-4e27-a8d0-daa3bfc0dc23', status: 'published', published_at: '2026-09-13T12:00:00Z' }
+    const ready = { ...pdfDocument, status: 'ready' }
+    let posted = 0
+    let key = ''
+    const router = await openWorkspace(`/fornecedores/${supplier.id}`, (path, init) => {
+      if (path === '/api/v1/requirement-sets') return json({ data: [published] })
+      if (path.includes('/documents')) return json({ data: [ready], meta: { current_page: 1, last_page: 1, total: 1 } })
+      if (init.method === 'POST' && path.endsWith('/analyses')) {
+        posted++
+        key = (init.headers as Headers).get('Idempotency-Key') || ''
+        expect(JSON.parse(String(init.body))).toEqual({ requirement_set_id: published.id, document_ids: [ready.id] })
+        return json({ data: { id: 'analysis-1', status: 'pending', attempts: 0, progress: 0 } }, 202)
+      }
+      return json({ data: supplier })
+    }, [...new Set(['supplier.view', 'document.view', 'analysis.view', 'analysis.run', 'requirement.view'])])
+    await screen.findByRole('heading', { name: /iniciar nova análise/i })
+    await fireEvent.update(await screen.findByLabelText('Conjunto de requisitos'), published.id)
+    await fireEvent.click(screen.getByLabelText(/generated\.pdf/i))
+    await fireEvent.click(screen.getByRole('button', { name: /iniciar análise documental/i }))
+    await waitFor(() => expect(router.currentRoute.value.path).toBe('/analises/analysis-1'))
+    expect(posted).toBe(1)
+    expect(key).toMatch(/^analysis-ui:[A-Za-z0-9-]+$/)
+  })
+
+  it('reuses the idempotency key after an uncertain network failure and prevents double submit', async () => {
+    const published = { ...requirementSet, id: 'ed9909e1-8af8-4e27-a8d0-daa3bfc0dc23', status: 'published', published_at: '2026-09-13T12:00:00Z' }
+    const keys: string[] = []
+    let release!: (response: Response) => void
+    let attempt = 0
+    await openWorkspace(`/fornecedores/${supplier.id}`, (path, init) => {
+      if (path === '/api/v1/requirement-sets') return json({ data: [published] })
+      if (path.includes('/documents')) return json({ data: [{ ...pdfDocument, status: 'uploaded' }], meta: { current_page: 1, last_page: 1, total: 1 } })
+      if (init.method === 'POST' && path.endsWith('/analyses')) {
+        keys.push((init.headers as Headers).get('Idempotency-Key') || '')
+        attempt++
+        if (attempt === 1) throw new TypeError('connection lost')
+        return new Promise(resolve => { release = resolve })
+      }
+      return json({ data: supplier })
+    }, ['supplier.view', 'document.view', 'analysis.view', 'analysis.run', 'requirement.view'])
+    await screen.findByRole('heading', { name: /iniciar nova análise/i })
+    await fireEvent.update(await screen.findByLabelText('Conjunto de requisitos'), published.id)
+    await fireEvent.click(screen.getByLabelText(/generated\.pdf/i))
+    const submit = screen.getByRole('button', { name: /iniciar análise documental/i })
+    await fireEvent.click(submit)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/conectar/i)
+    await fireEvent.click(submit)
+    await fireEvent.click(submit)
+    await waitFor(() => expect(keys).toHaveLength(2))
+    expect(keys[1]).toBe(keys[0])
+    expect(submit).toBeDisabled()
+    release(json({ data: { id: 'analysis-2', status: 'pending', attempts: 0, progress: 0 } }, 202))
+  })
+
+  it('shows actionable prerequisites and hides analysis creation without permission', async () => {
+    await openWorkspace(`/fornecedores/${supplier.id}`, (path) => path === '/api/v1/requirement-sets'
+      ? json({ data: [] })
+      : path.includes('/documents')
+        ? json({ data: [], meta: { current_page: 1, last_page: 1, total: 0 } })
+        : json({ data: supplier }), ['supplier.view', 'document.view', 'document.upload', 'analysis.view', 'analysis.run', 'requirement.view', 'requirement.publish'])
+    expect(await screen.findByRole('link', { name: /publicar conjunto/i })).toHaveAttribute('href', '/requisitos')
+    expect(screen.getByRole('link', { name: /enviar pdf/i })).toHaveAttribute('href', `/fornecedores/${supplier.id}/documentos`)
+    expect(screen.getByRole('button', { name: /iniciar análise documental/i })).toBeDisabled()
+  })
+
+  it('labels an API ready document as ready for analysis', async () => {
+    await openWorkspace(`/fornecedores/${supplier.id}`, path => path.includes('/documents')
+      ? json({ data: [{ ...pdfDocument, status: 'ready' }], meta: { current_page: 1, last_page: 1, total: 1 } }) : json({ data: supplier }))
+    expect(await screen.findByText(/pronto para análise/i)).toBeVisible()
+    expect(screen.queryByText(/aguardando processamento/i)).not.toBeInTheDocument()
+  })
   it('opens the latest completed analysis from the supplier dossier', async () => {
     await openWorkspace(`/fornecedores/${supplier.id}`, () => json({ data: { ...supplier, latest_analysis: { id: 'run-demo', status: 'completed' } } }), ['supplier.view', 'analysis.view'])
     expect(await screen.findByRole('link', { name: /matriz de conformidade/i })).toHaveAttribute('href', '/analises/run-demo/matriz')

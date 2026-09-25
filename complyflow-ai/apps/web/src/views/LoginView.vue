@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowRight, AtSign, Building2, Eye, EyeOff, FileText, Info, LockKeyhole, LogIn, Rocket, ShieldCheck, Sparkles } from '@lucide/vue'
 import BrandLogo from '../components/ui/BrandLogo.vue'
@@ -12,26 +12,59 @@ const router = useRouter()
 const route = useRoute()
 const email = ref('')
 const password = ref('')
+const name = ref(''), organizationName = ref(''), confirmation = ref('')
+const mode = ref<'login' | 'register'>('login')
+const fields = ref<Record<string, string>>({})
+const form = ref<HTMLFormElement>()
 const showPassword = ref(false)
 const error = ref('')
-const action = ref<'login' | 'demo'>('login')
+const action = ref<'login' | 'register' | 'demo'>('login')
 const message = computed(() => error.value || auth.bootstrapError || (route.query.expired ? 'Sua sessão expirou. Entre novamente para continuar.' : ''))
-
-async function enter(mode: 'login' | 'demo') {
+let active = true
+function clearSecrets() { password.value = ''; confirmation.value = ''; showPassword.value = false }
+function switchMode(value: 'login' | 'register') {
   if (auth.busy) return
-  action.value = mode
-  error.value = ''
+  mode.value = value; fields.value = {}; error.value = ''; clearSecrets()
+}
+async function focusInvalid() {
+  await nextTick()
+  if (active) form.value?.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus()
+}
+function validate() {
+  if (!email.value.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) fields.value.email = 'Informe um e-mail válido.'
+  if (!password.value) fields.value.password = 'Informe sua senha.'
+  if (mode.value === 'register') {
+    if (!name.value.trim()) fields.value.name = 'Informe seu nome.'
+    if (!organizationName.value.trim()) fields.value.organization_name = 'Informe o nome da organização.'
+    if (password.value.length < 12) fields.value.password = 'Use pelo menos 12 caracteres.'
+    if (!confirmation.value || confirmation.value !== password.value) fields.value.password_confirmation = 'As senhas devem ser iguais.'
+  }
+  return Object.keys(fields.value).length === 0
+}
+onBeforeUnmount(() => { active = false; clearSecrets() })
+
+async function enter(entry: 'login' | 'register' | 'demo') {
+  if (auth.busy) return
+  action.value = entry
+  error.value = ''; fields.value = {}
+  if (entry !== 'demo' && !validate()) { error.value = 'Verifique os campos destacados.'; await focusInvalid(); return }
   try {
-    if (mode === 'demo') await auth.startDemo()
+    if (entry === 'demo') await auth.startDemo()
+    else if (entry === 'register') await auth.register({ name: name.value.trim(), organization_name: organizationName.value.trim(), email: email.value, password: password.value, password_confirmation: confirmation.value })
     else await auth.login(email.value.trim(), password.value)
+    if (!active) return
     const redirect = route.query.redirect
     const target = typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//') && redirect !== '/login' ? redirect : '/'
     await router.replace(target)
   } catch (cause) {
-    error.value = cause instanceof ApiError && cause.status === 422 && mode === 'login'
+    if (!active) return
+    if (cause instanceof ApiError) fields.value = cause.fields
+    error.value = cause instanceof ApiError && cause.status === 422 && entry === 'login'
       ? 'E-mail ou senha incorretos. Confira suas credenciais e tente novamente.'
       : cause instanceof Error ? cause.message : 'Não foi possível entrar. Tente novamente.'
-  } finally { password.value = '' }
+    clearSecrets()
+    await focusInvalid()
+  } finally { clearSecrets() }
 }
 </script>
 
@@ -51,9 +84,33 @@ async function enter(mode: 'login' | 'demo') {
             INTELIGÊNCIA COM RESPONSABILIDADE
           </p>
           <h1 id="login-title">
-            Acesso à Plataforma Corporativa
+            {{ mode === 'register' ? 'Crie seu ambiente de conformidade' : 'Acesso à Plataforma Corporativa' }}
           </h1>
-          <p>Auditoria inteligente de fornecedores com soberania humana e rastreabilidade documental.</p>
+          <p>{{ mode === 'register' ? 'Cadastre sua conta de administrador e organize fornecedores, requisitos e evidências da sua organização.' : 'Auditoria inteligente de fornecedores com soberania humana e rastreabilidade documental.' }}</p>
+        </div>
+        <div
+          class="access-switch"
+          role="group"
+          aria-label="Tipo de acesso"
+        >
+          <button
+            type="button"
+            :aria-pressed="mode === 'login'"
+            :disabled="auth.busy"
+            aria-controls="access-form"
+            @click="switchMode('login')"
+          >
+            Entrar
+          </button>
+          <button
+            type="button"
+            :aria-pressed="mode === 'register'"
+            :disabled="auth.busy"
+            aria-controls="access-form"
+            @click="switchMode('register')"
+          >
+            Criar conta
+          </button>
         </div>
         <div
           v-if="message"
@@ -66,11 +123,58 @@ async function enter(mode: 'login' | 'demo') {
           />{{ message }}
         </div>
         <form
-          aria-label="Acesso à plataforma"
+          id="access-form"
+          ref="form"
+          :aria-label="mode === 'register' ? 'Cadastro de conta' : 'Acesso à plataforma'"
           class="login-form"
           :aria-busy="auth.busy"
-          @submit.prevent="enter('login')"
+          novalidate
+          @submit.prevent="enter(mode)"
         >
+          <template v-if="mode === 'register'">
+            <div class="form-field">
+              <label for="name">Seu nome</label>
+              <input
+                id="name"
+                v-model="name"
+                name="name"
+                autocomplete="name"
+                maxlength="255"
+                required
+                :disabled="auth.busy"
+                :aria-invalid="!!fields.name"
+                :aria-describedby="fields.name ? 'name-error' : undefined"
+              />
+              <p
+                v-if="fields.name"
+                id="name-error"
+                class="field-error"
+              >
+                {{ fields.name }}
+              </p>
+            </div>
+            <div class="form-field">
+              <label for="organization_name">Nome da organização</label>
+              <input
+                id="organization_name"
+                v-model="organizationName"
+                name="organization_name"
+                autocomplete="organization"
+                maxlength="255"
+                required
+                :disabled="auth.busy"
+                :aria-invalid="!!fields.organization_name"
+                :aria-describedby="fields.organization_name ? 'organization-error' : undefined"
+              />
+              <p
+                v-if="fields.organization_name"
+                id="organization-error"
+                class="field-error"
+              >
+                {{ fields.organization_name }}
+              </p>
+            </div>
+          </template>
           <div class="form-field">
             <label for="email">E-mail institucional</label>
             <div class="input-wrap">
@@ -87,8 +191,18 @@ async function enter(mode: 'login' | 'demo') {
                 placeholder="nome@suaempresa.com.br"
                 required
                 :disabled="auth.busy"
+                maxlength="255"
+                :aria-invalid="!!fields.email"
+                :aria-describedby="fields.email ? 'email-error' : undefined"
               />
             </div>
+            <p
+              v-if="fields.email"
+              id="email-error"
+              class="field-error"
+            >
+              {{ fields.email }}
+            </p>
           </div>
           <div class="form-field">
             <label for="password">Senha corporativa</label>
@@ -102,10 +216,13 @@ async function enter(mode: 'login' | 'demo') {
                 v-model="password"
                 name="password"
                 :type="showPassword ? 'text' : 'password'"
-                autocomplete="current-password"
+                :autocomplete="mode === 'register' ? 'new-password' : 'current-password'"
+                :minlength="mode === 'register' ? 12 : undefined"
                 placeholder="Insira sua senha"
                 required
                 :disabled="auth.busy"
+                :aria-invalid="!!fields.password"
+                :aria-describedby="fields.password ? 'password-error' : mode === 'register' ? 'password-hint' : undefined"
               />
               <button
                 class="password-toggle"
@@ -121,6 +238,45 @@ async function enter(mode: 'login' | 'demo') {
                 />
               </button>
             </div>
+            <p
+              v-if="fields.password"
+              id="password-error"
+              class="field-error"
+            >
+              {{ fields.password }}
+            </p>
+            <p
+              v-else-if="mode === 'register'"
+              id="password-hint"
+              class="muted"
+            >
+              Use pelo menos 12 caracteres.
+            </p>
+          </div>
+          <div
+            v-if="mode === 'register'"
+            class="form-field"
+          >
+            <label for="password_confirmation">Confirmar senha</label>
+            <input
+              id="password_confirmation"
+              v-model="confirmation"
+              name="password_confirmation"
+              type="password"
+              autocomplete="new-password"
+              minlength="12"
+              required
+              :disabled="auth.busy"
+              :aria-invalid="!!fields.password_confirmation"
+              :aria-describedby="fields.password_confirmation ? 'confirmation-error' : undefined"
+            />
+            <p
+              v-if="fields.password_confirmation"
+              id="confirmation-error"
+              class="field-error"
+            >
+              {{ fields.password_confirmation }}
+            </p>
           </div>
           <p class="session-note">
             <ShieldCheck
@@ -134,7 +290,7 @@ async function enter(mode: 'login' | 'demo') {
             :disabled="auth.busy"
           >
             <span
-              v-if="auth.busy && action === 'login'"
+              v-if="auth.busy && action !== 'demo'"
               class="spinner"
               aria-hidden="true"
             ></span>
@@ -143,7 +299,7 @@ async function enter(mode: 'login' | 'demo') {
               :size="19"
               aria-hidden="true"
             />
-            {{ auth.busy && action === 'login' ? 'Entrando…' : 'Entrar na Plataforma' }}
+            {{ mode === 'register' ? (auth.busy && action === 'register' ? 'Criando conta…' : 'Criar conta e acessar') : (auth.busy && action === 'login' ? 'Entrando…' : 'Entrar na Plataforma') }}
           </button>
         </form>
         <div class="login-divider">

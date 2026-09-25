@@ -19,25 +19,16 @@ const auth = useAuthStore()
         Voltar à visão geral
       </RouterLink>
     </template>
-    <template v-else-if="route.path === '/'">
-      <p>Olá, {{ auth.session?.user.name }}. Seu ambiente de conformidade documental está conectado.</p><p class="muted">
-        Acompanhe fornecedores, evidências e revisões pelo menu lateral.
-      </p><RouterLink
+    <template v-else-if="route.path === '/ajuda'">
+      <p>No dossiê do fornecedor, envie PDFs e inicie uma análise com uma versão publicada dos requisitos. Ao concluir, abra a matriz para inspecionar as evidências, revisar os achados e registrar uma decisão humana.</p>
+      <p>Uma conta criada em “Criar conta” começa com uma organização vazia e papel de administrador. Cadastre seu primeiro fornecedor e publique um conjunto de requisitos para começar.</p>
+      <p>A demonstração oferece uma organização isolada por 24 horas, com dados fictícios e papel de revisor. As ações disponíveis dependem das permissões da conta.</p>
+      <RouterLink
+        v-if="auth.can('supplier.view')"
         class="button button-primary"
         to="/fornecedores"
       >
-        Explorar fornecedores
-      </RouterLink>
-    </template>
-    <template v-else-if="route.path === '/ajuda'">
-      <p>Explore uma organização isolada por 24 horas na demonstração. Os dados são fictícios.</p><p>Analise documentos, confira os trechos de evidência e registre uma decisão humana. As permissões dependem do papel atribuído à sua conta.</p>
-    </template>
-    <template v-else>
-      <p>Esta área está sendo preparada. Sua sessão e organização já estão conectadas.</p><RouterLink
-        class="button button-secondary"
-        to="/"
-      >
-        Voltar à visão geral
+        Abrir fornecedores
       </RouterLink>
     </template>
   </section>

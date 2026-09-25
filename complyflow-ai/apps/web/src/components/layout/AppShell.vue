@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Building2, ClipboardCheck, FileCheck2, GitCompareArrows, LayoutDashboard, ListChecks, LogOut, Menu, CircleHelp, ShieldCheck, Sparkles, UserRound, X } from '@lucide/vue'
+import { Building2, FileCheck2, GitCompareArrows, LayoutDashboard, ListChecks, LogOut, Menu, CircleHelp, ShieldCheck, UserRound, X } from '@lucide/vue'
 import BrandLogo from '../ui/BrandLogo.vue'
 import { useAuthStore } from '../../stores/auth'
 
@@ -16,8 +16,6 @@ const navItems = [
   { path: '/', label: 'Visão Geral', icon: LayoutDashboard },
   { path: '/fornecedores', label: 'Fornecedores', icon: Building2, permission: 'supplier.view' },
   { path: '/requisitos', label: 'Requisitos', icon: ListChecks, permission: 'requirement.view' },
-  { path: '/analises', label: 'Análises', icon: Sparkles, permission: 'analysis.view' },
-  { path: '/revisoes', label: 'Revisões', icon: ClipboardCheck, permission: 'finding.review' },
   { path: '/comparacoes', label: 'Comparações', icon: GitCompareArrows, permission: 'supplier.view' },
   { path: '/auditoria', label: 'Auditoria', icon: ShieldCheck, permission: 'audit.view' },
   { path: '/ajuda', label: 'Central de Ajuda', icon: CircleHelp },

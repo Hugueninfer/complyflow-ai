@@ -1,6 +1,6 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type TestInfo } from '@playwright/test'
 
-async function enterDemo(page: Page) {
+async function enterDemo(page: Page, testInfo?: TestInfo) {
   await page.goto('/')
   const [created] = await Promise.all([
     // The 512 MiB runtime has one FPM child: concurrent visitors queue their
@@ -11,6 +11,10 @@ async function enterDemo(page: Page) {
   ])
   expect(created.status()).toBe(201)
   await expect(page.getByRole('heading', { name: /visão geral/i })).toBeVisible()
+  if (testInfo) {
+    await expect(page.getByText('Fornecedores analisados', { exact: true })).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath('demo-dashboard.png'), fullPage: true })
+  }
   await page.goto('/fornecedores')
   await page.getByRole('link', { name: 'NovaGuard Facilities', exact: true }).click()
   await page.getByRole('link', { name: /matriz de conformidade/i }).click()
@@ -18,7 +22,8 @@ async function enterDemo(page: Page) {
 }
 
 test('visitor reviews evidence and records a human decision', async ({ page }, testInfo) => {
-  await enterDemo(page)
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await enterDemo(page, testInfo)
   await expect(page.getByRole('button', { name: 'Inspecionar DEMO-01', exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('demo-matrix.png'), fullPage: true })
   for (const code of ['DEMO-01', 'DEMO-02', 'DEMO-03', 'DEMO-04']) {
@@ -37,6 +42,8 @@ test('visitor reviews evidence and records a human decision', async ({ page }, t
     if (code === 'DEMO-02') {
       await expect(dialog.locator('.finding-ai-suggestion')).toContainText('Parcial')
       await expect(dialog.locator('.human-record')).toContainText('Conforme')
+      await dialog.locator('.human-record').scrollIntoViewIfNeeded()
+      await page.screenshot({ path: testInfo.outputPath('demo-human-review.png') })
     }
     await dialog.getByRole('button', { name: 'Fechar evidência' }).click()
   }
@@ -57,6 +64,14 @@ test('visitor reviews evidence and records a human decision', async ({ page }, t
   await expect(page.getByText(decisionId, { exact: true })).toBeVisible()
   await expect(page.getByText(/verificad/i).first()).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('demo-audit.png'), fullPage: true })
+  await page.getByRole('navigation', { name: 'Principal', exact: true }).getByRole('link', { name: 'Comparações', exact: true }).click()
+  await page.getByLabel('Fornecedor à esquerda').selectOption({ label: 'NovaGuard Facilities' })
+  await page.getByLabel('Fornecedor à direita').selectOption({ label: 'Boreal Suprimentos Demo' })
+  await page.getByLabel('Versão do checklist').selectOption({ label: 'Homologação 2026 · v1' })
+  await page.getByRole('button', { name: 'Comparar fornecedores', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Resultados por requisito' })).toBeVisible()
+  await expect(page.getByRole('article')).toHaveCount(4)
+  await page.screenshot({ path: testInfo.outputPath('demo-comparison.png'), fullPage: true })
 })
 
 test('simultaneous visitors have isolated graphs, persisted deep links and mobile evidence', async ({ browser, baseURL }, testInfo) => {

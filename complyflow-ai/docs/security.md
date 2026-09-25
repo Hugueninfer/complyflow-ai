@@ -6,7 +6,7 @@ O MVP foi desenhado para demonstração fictícia e revisão humana. Não é uma
 
 Laravel resolve o tenant a partir da sessão autenticada; UUID enviado pelo cliente não concede acesso. Models, queries, policies e serviços de escrita conferem organização e permissões. Os papéis owner, analyst e reviewer distinguem cadastro/análise de revisão/decisão. A demo cria um reviewer isolado e expira exatamente 24 horas após a criação, incluindo bloqueio de sessões vencidas no servidor.
 
-Mutações usam CSRF e cookie de sessão regenerado no login. Produção configura cookies Secure/HttpOnly/SameSite=Lax, mesma origem e debug desativado. Nginx impede acesso a arquivos ocultos/PHP arbitrário, envia CSP, nosniff, DENY e política de permissões; fontes e scripts vêm do próprio domínio. Cadastro exige senha de 12 caracteres e confirmação. Não há recuperação de senha, MFA ou verificação de e-mail.
+Mutações usam CSRF e cookie de sessão regenerado no login/cadastro. Produção configura cookies Secure/HttpOnly/SameSite=Lax, mesma origem e debug desativado. Nginx impede acesso a arquivos ocultos/PHP arbitrário, envia CSP, nosniff, DENY e política de permissões; fontes e scripts vêm do próprio domínio. Cadastro exige senha de 12 caracteres e confirmação. E-mail é normalizado antes da validação/consulta; a unicidade trata contas legadas em maiúsculas e a disputa de cadastros retorna 422 seguro após rollback, sem criar outro tenant. A SPA obtém as permissões de `/me`, não persiste credenciais em localStorage e limpa senhas ao concluir o envio ou trocar de modo. Não há recuperação de senha, MFA ou verificação de e-mail.
 
 ### Limites públicos e proxy reverso
 

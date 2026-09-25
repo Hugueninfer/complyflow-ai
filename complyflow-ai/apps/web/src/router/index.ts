@@ -33,11 +33,7 @@ export function createAppRouter(pinia: Pinia, history: RouterHistory = createWeb
       { path: '/requisitos', component: RequirementsView, meta: { requiresAuth: true, title: 'Requisitos', permission: 'requirement.view' } },
       { path: '/analises/:id', component: AnalysisProgressView, meta: { requiresAuth: true, title: 'Acompanhamento da análise', permission: 'analysis.view' } },
       { path: '/analises/:id/matriz', component: ComplianceMatrixView, meta: { requiresAuth: true, title: 'Matriz de conformidade', permission: 'analysis.view' } },
-      ...[
-        ['/analises', 'Análises', 'analysis.view'],
-        ['/revisoes', 'Revisões', 'finding.review'],
-        ['/ajuda', 'Central de Ajuda', ''],
-      ].map(([path, title, permission]) => ({ path: path!, component: WorkspaceView, meta: { requiresAuth: true, title, permission } })),
+      { path: '/ajuda', component: WorkspaceView, meta: { requiresAuth: true, title: 'Central de Ajuda' } },
       { path: '/sem-permissao', component: WorkspaceView, meta: { requiresAuth: true, title: 'Permissão insuficiente' } },
       { path: '/:pathMatch(.*)*', redirect: '/' },
     ],

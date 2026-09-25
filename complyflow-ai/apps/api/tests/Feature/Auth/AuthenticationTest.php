@@ -112,6 +112,56 @@ class AuthenticationTest extends TestCase
         $this->assertGuest('web');
     }
 
+    public function test_registration_normalizes_email_before_uniqueness_validation(): void
+    {
+        User::factory()->create(['email' => 'ana@example.com']);
+        $this->postJson('/api/v1/register', $this->registration(' ANA@EXAMPLE.COM '))
+            ->assertUnprocessable()->assertJsonValidationErrors('email');
+        $this->assertDatabaseMissing('organizations', ['name' => 'Normalized tenant']);
+    }
+
+    public function test_registration_stores_a_trimmed_lowercase_email_and_requires_confirmed_long_password(): void
+    {
+        $this->postJson('/api/v1/register', $this->registration(' NEW@EXAMPLE.COM '))
+            ->assertCreated()->assertJsonPath('data.user.email', 'new@example.com');
+        $this->postJson('/api/v1/logout')->assertNoContent();
+        $this->postJson('/api/v1/register', [...$this->registration('short@example.com'), 'password' => 'short', 'password_confirmation' => 'short'])
+            ->assertUnprocessable()->assertJsonValidationErrors('password');
+        $this->postJson('/api/v1/register', [...$this->registration('mismatch@example.com'), 'password_confirmation' => 'different password'])
+            ->assertUnprocessable()->assertJsonValidationErrors('password');
+    }
+
+    public function test_login_accepts_email_case_and_whitespace_without_bypassing_the_password(): void
+    {
+        $user = User::factory()->create(['email' => 'ana@example.com', 'password' => 'correct horse battery staple']);
+        $this->postJson('/api/v1/login', ['email' => ' ANA@EXAMPLE.COM ', 'password' => 'wrong password'])
+            ->assertUnprocessable();
+        $this->assertGuest('web');
+        $this->postJson('/api/v1/login', ['email' => ' ANA@EXAMPLE.COM ', 'password' => 'correct horse battery staple'])->assertOk();
+        $this->assertAuthenticatedAs($user, 'web');
+    }
+
+    public function test_legacy_uppercase_identity_can_login_and_cannot_be_registered_again(): void
+    {
+        $user = User::factory()->create(['email' => 'LEGACY@EXAMPLE.COM', 'password' => 'correct horse battery staple']);
+        $this->postJson('/api/v1/register', $this->registration('legacy@example.com'))
+            ->assertUnprocessable()->assertJsonValidationErrors('email');
+        $this->postJson('/api/v1/login', ['email' => ' legacy@example.com ', 'password' => 'correct horse battery staple'])->assertOk();
+        $this->assertAuthenticatedAs($user, 'web');
+    }
+
+    private function registration(string $email): array
+    {
+        return ['name' => 'Owner', 'organization_name' => 'Normalized tenant', 'email' => $email,
+            'password' => 'correct horse battery staple', 'password_confirmation' => 'correct horse battery staple'];
+    }
+
+    public function test_registration_rejects_a_non_string_email_without_a_server_error(): void
+    {
+        $this->postJson('/api/v1/register', [...$this->registration('owner@example.invalid'), 'email' => ['invalid']])
+            ->assertUnprocessable()->assertJsonValidationErrors('email');
+    }
+
     public function test_logout_invalidates_the_authenticated_session(): void
     {
         $user = User::factory()->create();

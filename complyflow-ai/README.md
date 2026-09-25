@@ -10,7 +10,11 @@ Case de portfólio funcional em português, com Laravel, Vue e FastAPI. A demons
 
 Entre em **Explorar demonstração**, abra **NovaGuard Facilities**, siga para a matriz, inspecione as evidências e revise os quatro requisitos. A decisão final só aparece para uma pessoa autorizada após a revisão obrigatória. Em **Auditoria**, confira o registro preservado; em **Comparações**, veja dois fornecedores sob a mesma versão do checklist.
 
-Cada visitante recebe organização e sessão próprias por 24 horas. Há três fornecedores, uma análise aguardando revisão, um histórico humano fictício e os quatro estados `met`, `partial`, `missing`, `inconclusive`. Não há senha pública: a demo cria um reviewer. Cadastro de conta owner e início da primeira análise estão disponíveis pela API; a interface atual oferece login/demo, cadastros de negócio, upload, acompanhamento, retry e revisão. [Dados e cotas da demo](docs/demo.md) · [API](docs/api.md).
+Cada visitante recebe organização e sessão próprias por 24 horas. Há três fornecedores, uma análise aguardando revisão, um histórico humano fictício e os quatro estados `met`, `partial`, `missing`, `inconclusive`. Não há senha pública: a demo cria um reviewer. [Dados e cotas da demo](docs/demo.md) · [API](docs/api.md).
+
+Para percorrer a jornada desde o início, escolha **Criar conta** no acesso. Informe seu nome, organização, e-mail e senha de pelo menos 12 caracteres com confirmação. A conta owner começa com uma organização vazia. Em **Fornecedores**, cadastre um fornecedor; em **Requisitos**, crie e publique um checklist. Volte ao dossiê, envie um PDF fictício de `demo-assets/` e selecione a versão publicada e de 1 a 10 documentos (até 15 MiB no total). **Iniciar análise documental** abre o acompanhamento da fila real; ao concluir, a matriz oferece as evidências e a revisão humana. Uma nova execução fica disponível no dossiê após a anterior terminar, inclusive após uma decisão humana. Login, logout e recarga preservam a identidade pela sessão no servidor.
+
+[Cadastro de conta](docs/screenshots/owner-registration.png) · [Seleção da primeira análise](docs/screenshots/owner-analysis-selection.png). Análises e revisões são acessadas pelo dossiê e pela matriz; o menu principal contém somente destinos implementados.
 
 ![Evidência, sugestão da IA e correção humana preservadas](docs/screenshots/human-review.png)
 
@@ -53,7 +57,7 @@ O provedor `fake` é o padrão e não chama serviços externos. Downloads de ima
 
 ## Testar
 
-**Use um banco local descartável:** a suíte Laravel e `verify.sh` recriam as tabelas do Compose. Interrompa o worker antes dos testes se ele estiver ativo.
+**Use um banco local descartável:** a suíte Laravel e `verify.sh` recriam as tabelas do Compose. O script interrompe o worker para os testes de domínio, restaura o seed, inicia a fila para o E2E e a interrompe ao terminar. Para executar testes Laravel isolados, interrompa o worker antes.
 
 ```bash
 docker compose stop queue
@@ -62,7 +66,7 @@ bash scripts/verify.sh
 bash scripts/production-smoke.sh
 ```
 
-O primeiro script executa Laravel, Python, Vue, typecheck, lint, build, contrato HMAC entre linguagens e Playwright real. Depois restaura o seed e o executa novamente para verificar idempotência. O segundo constrói a imagem final e verifica health, SPA/deep links, CSRF, demo, reinício e E2E sob 512 MiB/0,1 CPU; ao terminar remove apenas seu projeto de smoke. Requer Python 3 no host para o pequeno cliente HTTP. A [CI](../.github/workflows/ci.yml) repete essas verificações sem credenciais externas.
+O primeiro script executa Laravel, Python, Vue, typecheck, lint, build e contrato HMAC entre linguagens. Depois restaura o seed, verifica a idempotência do seed e roda Playwright com a fila ativa. O navegador cobre a demo e a conta owner desde o cadastro vazio até fornecedor, checklist publicado, upload, análise real via HMAC/FastAPI fake, matriz/evidência e logout/login/recarga; não fornece respostas HTTP simuladas. O segundo constrói a imagem final e verifica health, SPA/deep links, CSRF, demo, reinício e as mesmas jornadas E2E sob 512 MiB/0,1 CPU; ao terminar remove apenas seu projeto de smoke. Requer Python 3 no host para o pequeno cliente HTTP. A [CI](../.github/workflows/ci.yml) repete essas verificações sem credenciais externas.
 
 Para parar: `docker compose down`. Para apagar os dados locais de desenvolvimento: `docker compose down -v` (irreversível para esse volume; não use sobre uma base importante).
 
@@ -83,7 +87,7 @@ O [guia de publicação](docs/render-free-deploy.md) descreve o Blueprint, gera�
 
 ## Limitações e próximos passos
 
-Ainda faltam telas de cadastro de conta e de seleção/envio da primeira análise; ambas as operações já existem e são testadas pela API. Não há consultas reais a órgãos públicos, certificações de segurança, assinatura digital ou homologação automática. O fake não mede conformidade real. OCR não está conectado ao pipeline público; PDFs somente imagem podem resultar sem evidência. O plano gratuito não é uma oferta de produção com SLA, e a capacidade sob carga não foi certificada.
+Não há recuperação de senha, verificação de e-mail, consultas reais a órgãos públicos, certificações de segurança, assinatura digital ou homologação automática. O fake não mede conformidade real. OCR não está conectado ao pipeline público; PDFs somente imagem podem resultar sem evidência. O plano gratuito não é uma oferta de produção com SLA, e a capacidade sob carga não foi certificada.
 
 Próximos passos: armazenamento de objetos, serviços/filas separados, cache compartilhado de replay antes de escalar, outbox e reconciliação operacional de jobs interrompidos, paginação de matrizes grandes, limpeza periódica de demos, backups e observabilidade sem conteúdo sensível. Existem quatro avisos de depreciação Python sobre fork em processo multithread e um sobre TestClient/httpx; a suíte passa e esses pontos exigem evolução antes de ampliar concorrência.
 

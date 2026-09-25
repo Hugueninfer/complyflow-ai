@@ -2,6 +2,10 @@
 # Destructive only to the configured local Compose database. Use a disposable project.
 set -euo pipefail
 export PROCESSOR_HMAC_SECRET="${PROCESSOR_HMAC_SECRET:-$(openssl rand -hex 32)}"
+# Domain tests recreate tables. Run the actual worker only after restoring the seed.
+docker compose stop queue
+cleanup() { docker compose stop queue; }
+trap cleanup EXIT
 docker compose up -d postgres processor api web --wait --wait-timeout 120
 docker compose run --rm api php artisan test
 docker compose run --rm --no-deps processor pytest -q
@@ -14,5 +18,6 @@ bash tests/contracts/processor-hmac.sh
 docker compose run --rm api php artisan migrate:fresh --seed --force
 docker compose run --rm api php artisan migrate --force
 docker compose run --rm api php artisan db:seed --force
+docker compose up -d queue --wait --wait-timeout 120
 docker compose --profile e2e run --rm e2e npx playwright test
 curl --fail --silent --show-error http://127.0.0.1:8000/api/health

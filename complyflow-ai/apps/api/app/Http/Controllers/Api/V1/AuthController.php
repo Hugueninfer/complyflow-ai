@@ -8,6 +8,9 @@ use App\Models\Organization;
 use App\Models\Role;
 use App\Models\User;
 use App\Support\CurrentOrganization;
+use Closure;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -45,29 +48,44 @@ class AuthController extends Controller
 
     public function register(Request $request): JsonResponse
     {
+        $this->normalizeEmail($request);
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
+            'email' => ['bail', 'required', 'string', 'email', 'max:255', function (string $attribute, string $value, Closure $fail): void {
+                // Older identities may predate normalization. Do not create an alias account.
+                if (User::query()->whereRaw('lower(trim(email)) = ?', [$value])->exists()) {
+                    $fail('This email is already registered.');
+                }
+            }],
             'password' => ['required', 'string', 'min:12', 'confirmed'],
             'organization_name' => ['required', 'string', 'max:255'],
         ]);
 
-        [$user, $organization] = DB::transaction(function () use ($validated): array {
-            $user = User::query()->create([
-                'name' => $validated['name'],
-                'email' => Str::lower($validated['email']),
-                'password' => $validated['password'],
-            ]);
-            $organization = Organization::query()->create([
-                'name' => $validated['organization_name'],
-                'slug' => Str::slug($validated['organization_name']).'-'.Str::lower(Str::random(8)),
-            ]);
-            $owner = Role::query()->where('name', 'owner')->firstOrFail();
+        try {
+            [$user, $organization] = DB::transaction(function () use ($validated): array {
+                $user = User::query()->create([
+                    'name' => $validated['name'],
+                    'email' => $validated['email'],
+                    'password' => $validated['password'],
+                ]);
+                $organization = Organization::query()->create([
+                    'name' => $validated['organization_name'],
+                    'slug' => Str::slug($validated['organization_name']).'-'.Str::lower(Str::random(8)),
+                ]);
+                $owner = Role::query()->where('name', 'owner')->firstOrFail();
 
-            $organization->users()->attach($user, ['role_id' => $owner->id]);
+                $organization->users()->attach($user, ['role_id' => $owner->id]);
 
-            return [$user, $organization];
-        });
+                return [$user, $organization];
+            });
+        } catch (UniqueConstraintViolationException $exception) {
+            // A second request can pass validation before the first commits. The
+            // existing unique email constraint is the final arbiter for new accounts.
+            if (User::query()->whereRaw('lower(trim(email)) = ?', [$validated['email']])->exists()) {
+                throw ValidationException::withMessages(['email' => ['This email is already registered.']]);
+            }
+            throw $exception;
+        }
 
         Auth::guard('web')->login($user);
         $request->session()->regenerate();
@@ -82,12 +100,16 @@ class AuthController extends Controller
 
     public function login(Request $request): JsonResponse
     {
+        $this->normalizeEmail($request);
         $credentials = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
         ]);
 
-        if (! Auth::guard('web')->attempt($credentials)) {
+        if (! Auth::guard('web')->attempt([
+            'password' => $credentials['password'],
+            fn (Builder $query) => $query->whereRaw('lower(trim(email)) = ?', [$credentials['email']]),
+        ])) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
@@ -110,5 +132,13 @@ class AuthController extends Controller
         $request->session()->regenerateToken();
 
         return response()->noContent();
+    }
+
+    private function normalizeEmail(Request $request): void
+    {
+        $email = $request->input('email');
+        if (is_string($email)) {
+            $request->merge(['email' => Str::lower(trim($email))]);
+        }
     }
 }

@@ -136,12 +136,25 @@ describe('Login and protected navigation', () => {
     expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument()
   })
 
-  it('prevents review navigation for an analyst using server permissions', async () => {
+  it('prevents audit navigation for an analyst using server permissions', async () => {
     fakeServer(() => json({ data: { ...session, role: 'analyst', permissions: ['supplier.view'] } }))
-    const { router } = await openLogin('/revisoes')
+    const { router } = await openLogin('/auditoria')
     expect(router.currentRoute.value.path).toBe('/sem-permissao')
     expect(screen.getByRole('heading', { name: 'Permissão insuficiente' })).toBeVisible()
-    expect(screen.queryByRole('link', { name: 'Revisões' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Auditoria' })).not.toBeInTheDocument()
+  })
+
+  it('keeps primary navigation on implemented destinations and explains how to reach analysis and review', async () => {
+    fakeServer(() => json({ data: session }))
+    await openLogin('/')
+    const navigation = within(screen.getByRole('navigation', { name: 'Principal' }))
+    expect(navigation.queryByRole('link', { name: 'Análises' })).not.toBeInTheDocument()
+    expect(navigation.queryByRole('link', { name: 'Revisões' })).not.toBeInTheDocument()
+    expect(navigation.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual(['/', '/fornecedores', '/requisitos', '/comparacoes', '/auditoria', '/ajuda'])
+    await fireEvent.click(navigation.getByRole('link', { name: 'Central de Ajuda' }))
+    expect(await screen.findByRole('heading', { name: 'Central de Ajuda' })).toBeVisible()
+    expect(screen.getByText(/no dossiê do fornecedor/i)).toBeVisible()
+    expect(screen.queryByText(/área está sendo preparada/i)).not.toBeInTheDocument()
   })
 
   it('opens the drawer, traps keyboard focus and restores the trigger on Escape', async () => {
