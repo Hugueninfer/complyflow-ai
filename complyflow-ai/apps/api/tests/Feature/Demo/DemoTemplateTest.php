@@ -95,8 +95,17 @@ class DemoTemplateTest extends TestCase
 
     private function snapshot(): array
     {
-        return collect(['organizations', 'users', 'organization_user', 'suppliers', 'requirement_sets', 'requirements', 'documents', 'document_pages', 'document_chunks', 'analysis_runs', 'analysis_findings', 'finding_citations', 'finding_reviews', 'supplier_decisions', 'audit_logs'])
+        $snapshot = collect(['organizations', 'users', 'organization_user', 'suppliers', 'requirement_sets', 'requirements', 'documents', 'document_pages', 'document_chunks', 'analysis_runs', 'analysis_findings', 'finding_citations', 'finding_reviews', 'supplier_decisions', 'audit_logs'])
             ->mapWithKeys(fn ($table) => [$table => DB::table($table)->orderBy($table === 'organization_user' ? 'user_id' : 'id')->get()->toJson()])->all();
+
+        $snapshot['document_blobs'] = DB::table('document_blobs')->orderBy('document_id')->get()
+            ->map(function ($blob): array {
+                $contents = is_resource($blob->contents) ? stream_get_contents($blob->contents) : $blob->contents;
+
+                return ['document_id' => $blob->document_id, 'sha256' => hash('sha256', $contents)];
+            })->all();
+
+        return $snapshot;
     }
 
     public function test_supplier_detail_links_only_its_tenant_latest_analysis_for_authorized_viewers(): void

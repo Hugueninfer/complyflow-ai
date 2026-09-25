@@ -17,11 +17,11 @@ Em uma base local descartável (o primeiro comando apaga as tabelas dessa base):
 ```sh
 docker compose run --rm api php artisan migrate:fresh --seed
 docker compose run --rm api php artisan db:seed --class=DemoTemplateSeeder
-docker compose up -d api web
+docker compose up -d postgres processor api web queue --wait --wait-timeout 120
 docker compose --profile e2e run --build --rm e2e npx playwright test
 ```
 
-Playwright usa Chromium real, sem respostas HTTP simuladas, retries ou esperas fixas. O container E2E está apenas na rede interna Docker. A imagem e dependências precisam ser baixadas na preparação; a jornada consulta os resultados locais e não exige provedor externo, processo de IA ou chave paga. Um proxy HTTP de transporte em `127.0.0.1:4173` encaminha as requisições ao Vite real, permitido apenas pelo hostname explícito `web`. O loopback fornece Web Crypto para as chaves idempotentes, sem alterar a configuração de segurança do navegador ou da aplicação publicada. O proxy não fornece dados, fixtures nem respostas de negócio.
+Playwright usa Chromium real, sem respostas HTTP simuladas, retries ou esperas fixas. O container E2E está apenas na rede interna Docker. A imagem e dependências precisam ser baixadas na preparação; a jornada owner envia uma análise pela fila e pelo processador local determinístico, sem provedor externo ou chave paga. Um proxy HTTP de transporte em `127.0.0.1:4173` encaminha as requisições ao Vite real, permitido apenas pelo hostname explícito `web`. O loopback fornece Web Crypto para as chaves idempotentes, sem alterar a configuração de segurança do navegador ou da aplicação publicada. O proxy não fornece dados, fixtures nem respostas de negócio.
 
 Execute testes Laravel antes de reconstruir a base para o navegador: a configuração Compose atual usa o banco local nos testes e as migrations dos testes podem apagá-lo.
 

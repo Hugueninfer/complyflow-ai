@@ -392,6 +392,19 @@ class RequirementSetApiTest extends TestCase
         $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$foreignSetId.'/versions')->assertNotFound();
     }
 
+    public function test_malformed_requirement_set_uuid_is_not_found_for_every_member_route(): void
+    {
+        $owner = $this->userWithRole($this->organization('Northwind'), 'owner');
+        $malformed = 'not-a-uuid';
+
+        $this->actingAs($owner)->getJson('/api/v1/requirement-sets/'.$malformed)->assertNotFound();
+        $this->actingAs($owner)->putJson('/api/v1/requirement-sets/'.$malformed, ['name' => 'Ignored'])->assertNotFound();
+        $this->actingAs($owner)->patchJson('/api/v1/requirement-sets/'.$malformed, ['name' => 'Ignored'])->assertNotFound();
+        $this->actingAs($owner)->deleteJson('/api/v1/requirement-sets/'.$malformed)->assertNotFound();
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$malformed.'/publish')->assertNotFound();
+        $this->actingAs($owner)->postJson('/api/v1/requirement-sets/'.$malformed.'/versions')->assertNotFound();
+    }
+
     public function test_analyst_can_delete_a_draft_but_published_set_is_immutable(): void
     {
         $organization = $this->organization('Northwind');

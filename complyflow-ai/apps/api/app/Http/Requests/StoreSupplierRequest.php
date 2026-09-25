@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Models\Supplier;
 use App\Support\CurrentOrganization;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class StoreSupplierRequest extends FormRequest
@@ -21,10 +22,14 @@ class StoreSupplierRequest extends FormRequest
     {
         $required = $this->isMethod('post') ? 'required' : 'sometimes';
         $taxIdRules = ['sometimes', 'nullable', 'string', 'max:255'];
+        $supplierId = (string) $this->route('supplier');
+        if (! $this->isMethod('post')) {
+            abort_unless(Str::isUuid($supplierId), 404);
+        }
         $supplier = $this->isMethod('post')
             ? null
             : Supplier::query()
-                ->wherePublicIdForCurrentOrganization((string) $this->route('supplier'))
+                ->wherePublicIdForCurrentOrganization($supplierId)
                 ->first();
 
         if ($this->isMethod('post') || $supplier !== null) {

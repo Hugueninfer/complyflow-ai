@@ -12,6 +12,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class RequirementSetController extends Controller
@@ -176,6 +177,8 @@ class RequirementSetController extends Controller
 
     private function resolve(string $publicId, bool $lock = false): RequirementSet
     {
+        abort_unless(Str::isUuid($publicId), 404);
+
         $query = RequirementSet::query()->wherePublicIdForCurrentOrganization($publicId);
 
         $set = $query->firstOrFail();

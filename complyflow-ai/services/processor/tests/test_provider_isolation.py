@@ -346,14 +346,26 @@ def test_exec_uses_no_shell_fork_callback_secrets_or_bytecode_writes(monkeypatch
     assert 'SECRET' not in str(launches)
 
 
-def test_child_that_never_reads_input_cannot_extend_the_deadline(child_probe):
-    mode, path = child_probe
+def test_child_that_never_reads_input_cannot_extend_the_deadline(monkeypatch, child_probe):
+    from app.providers import process_isolation
+
+    mode, _ = child_probe
     mode[0] = 'partial'
+    started_children = []
+    original_start = process_isolation._start_child
+
+    def observe_start():
+        process = original_start()
+        started_children.append(process.pid)
+        return process
+
+    monkeypatch.setattr(process_isolation, '_start_child', observe_start)
     started = monotonic()
     with pytest.raises(ExecutionStopped, match='^analysis_budget_exceeded$'):
         provider().analyze(requirement(), [context('a' * 100_000)], budget=ExecutionBudget(0.5))
     assert monotonic() - started < 1
-    assert_reaped(wait_state(path))
+    assert len(started_children) == 1
+    assert not Path(f'/proc/{started_children[0]}').exists(), 'child was not reaped after the deadline'
 
 
 def test_native_http_worker_cannot_outlive_abrupt_server_process_death(tmp_path):

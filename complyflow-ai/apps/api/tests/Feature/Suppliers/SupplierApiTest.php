@@ -80,6 +80,17 @@ class SupplierApiTest extends TestCase
         ]);
     }
 
+    public function test_malformed_supplier_uuid_is_not_found_for_every_member_route(): void
+    {
+        $owner = $this->userWithRole($this->organization('Northwind'), 'owner');
+        $malformed = 'not-a-uuid';
+
+        $this->actingAs($owner)->getJson('/api/v1/suppliers/'.$malformed)->assertNotFound();
+        $this->actingAs($owner)->putJson('/api/v1/suppliers/'.$malformed, ['name' => 'Ignored'])->assertNotFound();
+        $this->actingAs($owner)->patchJson('/api/v1/suppliers/'.$malformed, ['name' => 'Ignored'])->assertNotFound();
+        $this->actingAs($owner)->deleteJson('/api/v1/suppliers/'.$malformed)->assertNotFound();
+    }
+
     public function test_supplier_listing_contains_only_current_organization_records(): void
     {
         $organization = $this->organization('Northwind');

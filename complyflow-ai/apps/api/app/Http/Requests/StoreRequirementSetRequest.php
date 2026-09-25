@@ -6,6 +6,7 @@ use App\Models\RequirementSet;
 use App\Support\CurrentOrganization;
 use App\Support\RequirementWeights;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class StoreRequirementSetRequest extends FormRequest
@@ -67,8 +68,11 @@ class StoreRequirementSetRequest extends FormRequest
 
     private function targetSet(): RequirementSet
     {
+        $publicId = (string) $this->route('requirementSet');
+        abort_unless(Str::isUuid($publicId), 404);
+
         return $this->targetSet ??= RequirementSet::query()
-            ->wherePublicIdForCurrentOrganization((string) $this->route('requirementSet'))
+            ->wherePublicIdForCurrentOrganization($publicId)
             ->firstOrFail();
     }
 }

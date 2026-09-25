@@ -11,6 +11,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class SupplierController extends Controller
@@ -91,6 +92,8 @@ class SupplierController extends Controller
 
     private function resolve(string $publicId): Supplier
     {
+        abort_unless(Str::isUuid($publicId), 404);
+
         return Supplier::query()->wherePublicIdForCurrentOrganization($publicId)->firstOrFail();
     }
 
