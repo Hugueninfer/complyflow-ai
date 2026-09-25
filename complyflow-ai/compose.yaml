@@ -44,6 +44,9 @@ services:
       DB_USERNAME: ${POSTGRES_USER:-complyflow}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-complyflow}
       QUEUE_CONNECTION: database
+      SESSION_DRIVER: database
+      SESSION_LIFETIME: ${SESSION_LIFETIME:-1440}
+      SESSION_EXPIRE_ON_CLOSE: "false"
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
@@ -84,6 +87,9 @@ services:
       DB_USERNAME: ${POSTGRES_USER:-complyflow}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-complyflow}
       QUEUE_CONNECTION: database
+      SESSION_DRIVER: database
+      SESSION_LIFETIME: ${SESSION_LIFETIME:-1440}
+      SESSION_EXPIRE_ON_CLOSE: "false"
     volumes:
       - .:/workspace
       - api_vendor:/workspace/apps/api/vendor

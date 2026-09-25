@@ -22,6 +22,12 @@ services:
         value: production
       - key: APP_DEBUG
         value: "false"
+      - key: SESSION_DRIVER
+        value: database
+      - key: SESSION_LIFETIME
+        value: "1440"
+      - key: SESSION_EXPIRE_ON_CLOSE
+        value: "false"
       - key: AI_PROVIDER
         value: fake
 databases:

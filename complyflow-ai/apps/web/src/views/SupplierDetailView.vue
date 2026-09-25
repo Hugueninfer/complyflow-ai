@@ -15,7 +15,13 @@ const editButton = ref<HTMLButtonElement>(), deleteButton = ref<HTMLButtonElemen
 let generation = 0
 async function load() { const current = ++generation; loading.value = true; error.value = ''; supplier.value = undefined; editing.value = false; deleting.value = false; success.value = ''; try { const response = await api.get<Envelope<Supplier>>(`/suppliers/${route.params.id}`); if (current === generation) supplier.value = response.data.data } catch (cause) { if (current === generation) error.value = (cause as Error).message } finally { if (current === generation) loading.value = false } }
 function closeEdit() { editing.value = false; void nextTick(() => editButton.value?.focus()) }
-function saved(value: Supplier) { supplier.value = value; success.value = 'Cadastro atualizado com sucesso.'; closeEdit() }
+function saved(value: Supplier) {
+  if (!supplier.value || value.id !== supplier.value.id || value.id !== route.params.id) return
+  // Registration updates omit dossier-only fields such as latest_analysis.
+  supplier.value = { ...supplier.value, ...value }
+  success.value = 'Cadastro atualizado com sucesso.'
+  closeEdit()
+}
 async function confirmDelete() { deleting.value = true; await nextTick(); cancelDelete.value?.focus() }
 function closeDelete() { deleting.value = false; void nextTick(() => deleteButton.value?.focus()) }
 async function remove() { if (busy.value || !supplier.value) return; busy.value = true; deleteError.value = ''; try { await api.delete(`/suppliers/${supplier.value.id}`); await router.push('/fornecedores') } catch (cause) { deleteError.value = (cause as Error).message } finally { busy.value = false } }

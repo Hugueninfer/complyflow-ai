@@ -2,6 +2,8 @@
 
 O template reservado `demo-template` chama-se Atlas Industrial Demo e não possui vínculos de usuários após o commit do seed. Os três atores fictícios de referência não têm senha conhecida nem acesso ao template. Não existem credenciais públicas de administrador. O botão de demonstração cria um revisor e uma organização exclusivos com expiração exata de 24 horas.
 
+O cookie persistente e a sessão PostgreSQL têm janela de inatividade de pelo menos 1.440 minutos: retornar após três horas sem atividade recupera a mesma demo no mesmo navegador. A atividade renova essa janela técnica, mas nunca altera o `expires_at` original. Em `expires_at <= agora`, o servidor bloqueia acesso com 401 e invalida a sessão usada, mesmo se o cookie ainda não venceu. Fechar o navegador normalmente preserva o cookie; modo privado, limpeza de cookies, logout ou perda do banco/chave impedem retomar a demo, que não possui senha de recuperação. A purga física é posterior e não determina o momento do bloqueio.
+
 NovaGuard Facilities aguarda revisão dos quatro requisitos. Boreal Suprimentos Demo possui quatro revisões e uma decisão humana fictícia condicionada. Vértice Logística Demo ainda não tem análise. O checklist publicado Homologação 2026 inclui `met`, `partial`, `missing` e `inconclusive`; são resultados ilustrativos pré-carregados, e nenhuma decisão é tomada pela IA. Os mesmos três documentos genéricos fictícios são vinculados aos dois fornecedores analisados, sem atribuição a uma empresa real.
 
 Cada clone começa com 3/10 fornecedores, 2/3 análises e 16.416/15.728.640 bytes consumidos. A cota restante não concede permissões: o visitante é reviewer e pode inspecionar, revisar e decidir. O comando existente `demo:purge-expired` remove apenas demos vencidas.

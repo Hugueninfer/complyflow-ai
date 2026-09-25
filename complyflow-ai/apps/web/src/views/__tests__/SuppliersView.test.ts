@@ -5,6 +5,65 @@ import { json } from '../../test/server'
 import { openWorkspace, supplier, pdfDocument, requirementSet } from '../../test/workspace'
 
 describe('Supplier workspace', () => {
+  it.each(['completed', 'pending', 'processing'])('preserves the latest %s analysis when editing a supplier returns only registration fields', async status => {
+    let selectionReads = 0
+    await openWorkspace(`/fornecedores/${supplier.id}`, (path, init) => {
+      if (init.method === 'PUT') return json({ data: { ...supplier, name: 'Cadastro atualizado' } })
+      if (path.includes('/requirement-sets')) { selectionReads++; return json({ data: [] }) }
+      if (path.includes('/documents')) return json({ data: [], meta: { current_page: 1, last_page: 1, total: 0 } })
+      return json({ data: { ...supplier, latest_analysis: { id: 'latest-run', status } } })
+    }, ['supplier.view', 'supplier.update', 'analysis.view', 'analysis.run', 'requirement.view', 'document.view'])
+    await screen.findByRole('heading', { name: supplier.name })
+    await fireEvent.click(screen.getByRole('button', { name: 'Editar cadastro' }))
+    await fireEvent.update(screen.getByLabelText('Razão social'), 'Cadastro atualizado')
+    await fireEvent.submit(screen.getByRole('form', { name: 'Cadastro do fornecedor' }))
+    await screen.findByRole('heading', { name: 'Cadastro atualizado' })
+    expect(screen.getByRole('link', { name: status === 'completed' ? 'Matriz de conformidade' : 'Acompanhar análise' }))
+      .toHaveAttribute('href', status === 'completed' ? '/analises/latest-run/matriz' : '/analises/latest-run')
+    expect(screen.queryByText(/ainda não possui análise documental/i)).not.toBeInTheDocument()
+    if (status !== 'completed') {
+      expect(screen.queryByRole('heading', { name: 'Iniciar nova análise' })).not.toBeInTheDocument()
+      expect(selectionReads).toBe(0)
+    }
+  })
+
+  it('keeps a processing run and the editable draft when the registration update fails', async () => {
+    await openWorkspace(`/fornecedores/${supplier.id}`, (_path, init) => init.method === 'PUT'
+      ? json({}, 503)
+      : json({ data: { ...supplier, latest_analysis: { id: 'processing-run', status: 'processing' } } }),
+    ['supplier.view', 'supplier.update', 'analysis.view', 'analysis.run'])
+    await screen.findByRole('heading', { name: supplier.name })
+    await fireEvent.click(screen.getByRole('button', { name: 'Editar cadastro' }))
+    await fireEvent.update(screen.getByLabelText('Razão social'), 'Rascunho preservado')
+    await fireEvent.submit(screen.getByRole('form', { name: 'Cadastro do fornecedor' }))
+    await screen.findByRole('alert')
+    expect(screen.getByLabelText('Razão social')).toHaveValue('Rascunho preservado')
+    expect(screen.getByRole('link', { name: 'Acompanhar análise' })).toHaveAttribute('href', '/analises/processing-run')
+    expect(screen.queryByRole('heading', { name: 'Iniciar nova análise' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Cadastro atualizado com sucesso.')).not.toBeInTheDocument()
+  })
+
+  it.each([200, 503])('ignores a late %s registration response after opening a different supplier', async status => {
+    let release!: (response: Response) => void
+    const other = { ...supplier, id: 'other-supplier', name: 'Outro fornecedor', latest_analysis: { id: 'other-run', status: 'processing' } }
+    const router = await openWorkspace(`/fornecedores/${supplier.id}`, (path, init) => {
+      if (init.method === 'PUT') return new Promise(resolve => { release = resolve })
+      return json({ data: path.endsWith(other.id) ? other : { ...supplier, latest_analysis: { id: 'first-run', status: 'completed' } } })
+    }, ['supplier.view', 'supplier.update', 'analysis.view'])
+    await screen.findByRole('heading', { name: supplier.name })
+    await fireEvent.click(screen.getByRole('button', { name: 'Editar cadastro' }))
+    await fireEvent.submit(screen.getByRole('form', { name: 'Cadastro do fornecedor' }))
+    await waitFor(() => expect(release).toBeTypeOf('function'))
+    await router.push(`/fornecedores/${other.id}`)
+    await screen.findByRole('heading', { name: other.name })
+    release(json({ data: { ...supplier, name: 'Resposta antiga' } }, status))
+    await flushPromises()
+    expect(screen.getByRole('heading', { name: other.name })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Acompanhar análise' })).toHaveAttribute('href', '/analises/other-run')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText('Cadastro atualizado com sucesso.')).not.toBeInTheDocument()
+  })
+
   it.each(['completed', 'failed'])('allows a new run after a %s analysis', async status => {
     await openWorkspace(`/fornecedores/${supplier.id}`, path => {
       if (path.includes('/documents')) return json({ data: [], meta: { current_page: 1, last_page: 1, total: 0 } })

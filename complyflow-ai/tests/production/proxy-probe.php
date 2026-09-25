@@ -16,6 +16,10 @@ Illuminate\Support\Facades\Route::middleware('web')->get('/api/proxy-probe', fun
         'forwarded_host' => $request->header('X-Forwarded-Host'),
         'forwarded_proto' => $request->header('X-Forwarded-Proto'),
         'ip' => $request->ip(),
+        'config_cached' => app()->configurationIsCached(),
+        'session_driver' => config('session.driver'),
+        'session_lifetime' => config('session.lifetime'),
+        'session_expire_on_close' => config('session.expire_on_close'),
     ]);
 });
 $app->handleRequest(Illuminate\Http\Request::capture());

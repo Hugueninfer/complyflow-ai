@@ -32,7 +32,9 @@ return [
     |
     */
 
-    'lifetime' => (int) env('SESSION_LIFETIME', 120),
+    // The credential-free demo must remain resumable throughout its absolute 24h window.
+    // This idle timeout slides with activity; ResolveOrganization enforces demo.expires_at.
+    'lifetime' => max(1440, (int) env('SESSION_LIFETIME', 1440)),
 
     'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', false),
 

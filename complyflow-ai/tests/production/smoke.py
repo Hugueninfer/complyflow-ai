@@ -8,6 +8,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from email.utils import parsedate_to_datetime
+from http.cookies import SimpleCookie
 
 base = os.environ.get('SMOKE_BASE_URL', 'http://127.0.0.1:18080')
 cookies = http.cookiejar.CookieJar()
@@ -80,6 +82,10 @@ for path, data, expected in [('/api/v1/me', None, 401), ('/api/v1/demo-sessions'
         assert error.code == expected, (path, error.code)
 response, body = request('/api/v1/demo-sessions', {})
 assert response.status == 201
+session_header = next(header for header in response.headers.get_all('Set-Cookie') if 'httponly' in header.lower())
+session_cookie = next(iter(SimpleCookie(session_header).values()))
+assert 86340 <= int(session_cookie['max-age']) <= 86400
+assert 86340 <= parsedate_to_datetime(session_cookie['expires']).timestamp() - time.time() <= 86400
 response, body = request('/api/v1/suppliers')
 assert len(json.loads(body)['data']) == 3
 response, body = request('/api/v1/dashboard')
