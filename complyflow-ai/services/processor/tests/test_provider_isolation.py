@@ -35,6 +35,19 @@ def provider():
     )
 
 
+def test_native_gemini_crosses_exec_boundary(child_probe):
+    from app.providers.gemini import GeminiProvider
+
+    mode, state_path = child_probe
+    mode[0] = 'ok'
+    finding = GeminiProvider(api_key='SECRET key', model='gemini-3.5-flash-lite').analyze(
+        requirement(), [context()], budget=ExecutionBudget(5),
+    )
+
+    assert finding.status == 'missing'
+    assert_reaped(wait_state(state_path))
+
+
 def wait_state(path, timeout=4):
     deadline = monotonic() + timeout
     while not path.exists():

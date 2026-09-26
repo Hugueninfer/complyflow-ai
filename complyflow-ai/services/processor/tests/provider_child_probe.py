@@ -114,12 +114,20 @@ else:
                 return httpx.Response(200, content=b'SECRET invalid JSON')
             if mode == 'http_oversize':
                 return httpx.Response(200, content=b'x' * 65_537)
-            user = json.loads(request.content)['messages'][1]['content']
+            body = json.loads(request.content)
+            native_gemini = 'contents' in body
+            user = (body['contents'][0]['parts'][0]['text'] if native_gemini
+                    else body['messages'][1]['content'])
             requirement = json.loads(user.split('<requirement>')[1].split('</requirement>')[0])
             finding = {'requirement_id': requirement['requirement_id'], 'status': 'missing',
                        'confidence': 0.0, 'justification': 'Sem evidência.', 'requires_human_review': True,
                        'search_summary': 'Busca offline sem evidência.', 'citations': []}
-            raw = json.dumps({'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(finding)}}]}).encode()
+            envelope = ({'candidates': [{'finishReason': 'STOP', 'content': {
+                'parts': [{'text': json.dumps(finding)}],
+            }}]} if native_gemini else {
+                'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(finding)}}],
+            })
+            raw = json.dumps(envelope).encode()
             if mode == 'max_response':
                 raw += b' ' * (65_536 - len(raw))
             return httpx.Response(200, content=raw)

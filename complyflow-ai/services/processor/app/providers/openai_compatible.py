@@ -106,6 +106,12 @@ class OpenAICompatibleProvider(AIProvider):
             self.base_url, self.api_key, payload, timeout=PROVIDER_TIMEOUT_SECONDS, budget=budget,
         )
 
+    def _headers(self) -> dict[str, str]:
+        return {
+            'Authorization': 'Bearer ' + self.api_key,
+            'Accept-Encoding': 'identity',
+        }
+
     async def _request(self, payload: dict, budget: ExecutionBudget | None = None) -> bytes:
         timeout = budget.remaining(PROVIDER_TIMEOUT_SECONDS) if budget else PROVIDER_TIMEOUT_SECONDS
         deadline = monotonic() + timeout
@@ -142,10 +148,7 @@ class OpenAICompatibleProvider(AIProvider):
         async with httpx.AsyncClient(
             timeout=timeout, follow_redirects=False, trust_env=False, transport=self._transport,
         ) as client:
-            async with client.stream('POST', self.url, json=payload, headers={
-                'Authorization': 'Bearer ' + self.api_key,
-                'Accept-Encoding': 'identity',
-            }) as response:
+            async with client.stream('POST', self.url, json=payload, headers=self._headers()) as response:
                 response.raise_for_status()
                 # Reject compression before a decoder can allocate an expanded body.
                 encoding = response.headers.get('Content-Encoding', 'identity')

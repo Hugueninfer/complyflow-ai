@@ -87,11 +87,15 @@ def _read_exact(fd, size, deadline, budget):
     return bytes(data)
 
 
-def request_in_child(base_url, api_key, payload, *, timeout, budget: ExecutionBudget | None):
+def request_in_child(
+    base_url, api_key, payload, *, timeout, budget: ExecutionBudget | None,
+    provider_kind='openai-compatible', model=None,
+):
     deadline = monotonic() + (budget.remaining(timeout) if budget else timeout)
     try:
         raw = json.dumps({
             'base_url': base_url, 'api_key': api_key, 'payload': payload, 'deadline': deadline,
+            'provider_kind': provider_kind, 'model': model or payload.get('model'),
         }, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode()
     except (ValueError, TypeError, UnicodeError):
         raise ProviderError('invalid_provider_request') from None

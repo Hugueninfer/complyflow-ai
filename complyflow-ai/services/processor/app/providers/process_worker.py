@@ -42,11 +42,17 @@ def main() -> None:
             raise ValueError
         import anyio
         from app.execution import ExecutionBudget
-        from app.providers.openai_compatible import OpenAICompatibleProvider
-
-        provider = OpenAICompatibleProvider(
-            base_url=request['base_url'], api_key=request['api_key'], model=request['payload']['model'],
-        )
+        provider_kind = request.get('provider_kind', 'openai-compatible')
+        if provider_kind == 'gemini':
+            from app.providers.gemini import GeminiProvider
+            provider = GeminiProvider(api_key=request['api_key'], model=request['model'])
+        elif provider_kind == 'openai-compatible':
+            from app.providers.openai_compatible import OpenAICompatibleProvider
+            provider = OpenAICompatibleProvider(
+                base_url=request['base_url'], api_key=request['api_key'], model=request['model'],
+            )
+        else:
+            raise ValueError
         raw = anyio.run(provider._request, request['payload'], ExecutionBudget(request['deadline'] - monotonic()))
         message = b'O' + raw if len(raw) <= MAX_RESPONSE_BYTES else b'Einvalid_provider_response'
     except BaseException as error:

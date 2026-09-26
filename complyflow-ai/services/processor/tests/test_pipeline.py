@@ -114,7 +114,7 @@ def test_keys_alone_never_enable_real_provider(monkeypatch):
 
 def test_gemini_provider_uses_official_endpoint_and_free_model_by_default(monkeypatch):
     from app.pipeline.analyze import AnalysisPipeline
-    from app.providers.openai_compatible import OpenAICompatibleProvider
+    from app.providers.gemini import GeminiProvider
 
     monkeypatch.setenv('AI_PROVIDER', 'gemini')
     monkeypatch.setenv('GEMINI_API_KEY', 'test-only')
@@ -122,10 +122,10 @@ def test_gemini_provider_uses_official_endpoint_and_free_model_by_default(monkey
 
     provider = AnalysisPipeline.from_settings().provider
 
-    assert isinstance(provider, OpenAICompatibleProvider)
-    assert provider.base_url == 'https://generativelanguage.googleapis.com/v1beta/openai/'
-    assert provider.model == 'gemini-3.8-flash'
-    assert provider.reasoning_effort == 'low'
+    assert isinstance(provider, GeminiProvider)
+    assert provider.base_url == 'https://generativelanguage.googleapis.com/v1beta'
+    assert provider.model == 'gemini-3.5-flash-lite'
+    assert provider.reasoning_effort == 'minimal'
 
 
 def test_gemini_provider_requires_its_dedicated_api_key(monkeypatch):
