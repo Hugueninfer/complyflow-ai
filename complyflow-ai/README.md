@@ -2,7 +2,7 @@
 
 Da evidência documental à decisão humana. Plataforma multi-tenant que organiza fornecedores, checklists versionados e PDFs numa matriz rastreável: sugestão assistiva, confiança, página, trecho, revisão e decisão final separadas.
 
-Case de portfólio funcional em português, com Laravel, Vue e FastAPI. A demonstração funciona sem chave paga e usa somente dados fictícios. O projeto está preparado para publicação no Render; este repositório não afirma que existe uma instância pública publicada.
+Case de portfólio funcional em português, com Laravel, Vue e FastAPI. A demonstração funciona sem chave paga, usa somente dados fictícios e está publicada no Render: **[abrir ComplyFlow AI ao vivo](https://complyflow-ai.onrender.com)**. A apresentação bilíngue completa, com galeria capturada da produção, está no [README principal em inglês](../README.md) e em [português](../README.pt-BR.md).
 
 ![Dashboard com dados fictícios de QA](docs/screenshots/dashboard.png)
 
