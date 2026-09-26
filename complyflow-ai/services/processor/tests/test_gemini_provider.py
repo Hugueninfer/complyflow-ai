@@ -25,7 +25,7 @@ def test_gemini_uses_native_api_key_header_and_structured_output():
         body = json.loads(request.content)
         assert request.url == (
             'https://generativelanguage.googleapis.com/v1beta/'
-            'models/gemini-3.5-flash-lite:generateContent'
+            'models/gemini-3.1-flash-lite:generateContent'
         )
         assert request.headers['x-goog-api-key'] == 'test-only'
         assert 'authorization' not in request.headers
@@ -41,7 +41,7 @@ def test_gemini_uses_native_api_key_header_and_structured_output():
         }]})
 
     provider = InProcessMockGeminiProvider(
-        api_key='test-only', model='gemini-3.5-flash-lite',
+        api_key='test-only', model='gemini-3.1-flash-lite',
         transport=httpx.MockTransport(response),
     )
     assert provider.analyze(requirement(), [context()]) == FindingDraft.model_validate(expected)

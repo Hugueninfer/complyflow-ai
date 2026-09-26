@@ -124,7 +124,7 @@ def test_gemini_provider_uses_official_endpoint_and_free_model_by_default(monkey
 
     assert isinstance(provider, GeminiProvider)
     assert provider.base_url == 'https://generativelanguage.googleapis.com/v1beta'
-    assert provider.model == 'gemini-3.5-flash-lite'
+    assert provider.model == 'gemini-3.1-flash-lite'
     assert provider.reasoning_effort == 'minimal'
 
 

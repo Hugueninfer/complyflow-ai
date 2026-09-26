@@ -40,7 +40,7 @@ def test_native_gemini_crosses_exec_boundary(child_probe):
 
     mode, state_path = child_probe
     mode[0] = 'ok'
-    finding = GeminiProvider(api_key='SECRET key', model='gemini-3.5-flash-lite').analyze(
+    finding = GeminiProvider(api_key='SECRET key', model='gemini-3.1-flash-lite').analyze(
         requirement(), [context()], budget=ExecutionBudget(5),
     )
 

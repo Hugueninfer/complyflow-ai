@@ -25,7 +25,7 @@ MAX_CHUNKS = 2000
 MAX_DOCUMENTS = 10
 MAX_REQUIREMENTS = 100
 MAX_TOTAL_PDF_BYTES = 15 * 1024 * 1024
-DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite'
+DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite'
 
 
 class AnalysisError(ValueError):
