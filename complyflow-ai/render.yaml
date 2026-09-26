@@ -32,6 +32,8 @@ services:
         value: gemini
       - key: GEMINI_MODEL
         value: gemini-3.8-flash
+      - key: AI_DAILY_REQUIREMENT_LIMIT
+        value: "20"
       - key: GEMINI_API_KEY
         sync: false
 databases:

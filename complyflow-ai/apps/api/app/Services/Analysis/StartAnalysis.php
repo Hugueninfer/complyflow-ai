@@ -37,12 +37,34 @@ class StartAnalysis
             abort_unless($documents->count() === count($documentIds), 422, 'Invalid document selection.');
             abort_if($documents->sum('size_bytes') > 15 * 1024 * 1024, 422, 'Selected PDFs must not exceed 15 MiB in total.');
             $fingerprint = AnalysisFingerprint::make($supplier, $set, $documents->pluck('sha256')->all());
+            $dailyRequirementLimit = max(0, (int) config('services.ai.daily_requirement_limit', 0));
+            $usageDate = null;
+            if ($dailyRequirementLimit > 0) {
+                // Serialize the shared provider budget across every tenant.
+                DB::select('SELECT pg_advisory_xact_lock(170026, 1803)');
+                $usageDate = now()->toDateString();
+            }
             $run = AnalysisRun::forCurrentOrganization()->firstOrCreate(
                 ['idempotency_key' => $key],
                 ['supplier_id' => $supplier->id, 'requirement_set_id' => $set->id, 'document_set_hash' => $fingerprint, 'document_ids' => $documents->pluck('public_id')->all(), 'status' => 'pending'],
             );
             abort_unless(hash_equals($run->document_set_hash, $fingerprint), 409, 'Idempotency key already used with different input.');
             if ($run->wasRecentlyCreated) {
+                if ($dailyRequirementLimit > 0) {
+                    $usedToday = (int) DB::table('ai_usage_reservations')
+                        ->where('usage_date', $usageDate)
+                        ->sum('units');
+                    if ($usedToday + $requirementCount > $dailyRequirementLimit) {
+                        throw new AiDailyQuotaExceeded;
+                    }
+                    DB::table('ai_usage_reservations')->insert([
+                        'analysis_run_id' => $run->id,
+                        'usage_date' => $usageDate,
+                        'units' => $requirementCount,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
                 abort_if($demo && AnalysisRun::forCurrentOrganization()->count() > $demo->analysis_quota, 429, 'Demo analysis quota exceeded.');
                 $demo?->increment('analyses_used');
                 ProcessAnalysis::dispatch($run->id)->afterCommit();

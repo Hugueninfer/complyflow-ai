@@ -125,6 +125,7 @@ def test_gemini_provider_uses_official_endpoint_and_free_model_by_default(monkey
     assert isinstance(provider, OpenAICompatibleProvider)
     assert provider.base_url == 'https://generativelanguage.googleapis.com/v1beta/openai/'
     assert provider.model == 'gemini-3.8-flash'
+    assert provider.reasoning_effort == 'low'
 
 
 def test_gemini_provider_requires_its_dedicated_api_key(monkeypatch):

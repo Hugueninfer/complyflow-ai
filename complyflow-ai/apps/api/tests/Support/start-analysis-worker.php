@@ -2,6 +2,7 @@
 
 use App\Models\AnalysisRun;
 use App\Models\Supplier;
+use App\Services\Analysis\AiDailyQuotaExceeded;
 use App\Services\Analysis\StartAnalysis;
 use App\Support\CurrentOrganization;
 use Illuminate\Contracts\Console\Kernel;
@@ -23,6 +24,8 @@ if ($argv[6] === 'pause') {
 try {
     $run = app(StartAnalysis::class)->handle(Supplier::wherePublicIdForCurrentOrganization($argv[2])->firstOrFail(), $argv[3], [$argv[4]], 'concurrent-key');
     echo json_encode(['id' => $run->public_id, 'created' => $run->wasRecentlyCreated])."\n";
+} catch (AiDailyQuotaExceeded) {
+    echo json_encode(['quota' => true])."\n";
 } catch (Throwable) {
     fwrite(STDERR, "Analysis worker failed.\n");
     exit(1);

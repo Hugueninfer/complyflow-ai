@@ -160,6 +160,14 @@ onBeforeUnmount(() => { active = false; lifecycle++; generation++; readControlle
     <p class="muted">
       Combine uma versão publicada dos requisitos com 1 a 10 PDFs deste fornecedor, até 15 MiB no total. A decisão continuará sendo humana.
     </p>
+    <p class="prerequisite-note">
+      Esta instância é destinada somente a documentos fictícios. No nível gratuito, o conteúdo enviado e as respostas geradas são usados pelo Google para melhorar seus produtos. Consulte os
+      <a
+        href="https://ai.google.dev/gemini-api/terms"
+        target="_blank"
+        rel="noreferrer"
+      >Termos da Gemini API</a>.
+    </p>
 
     <div
       v-if="loading"

@@ -8,6 +8,11 @@ return [
         'http_timeout_seconds' => env('PROCESSOR_HTTP_TIMEOUT_SECONDS', 60),
     ],
 
+    'ai' => [
+        // Zero disables the shared budget for local fake-provider development.
+        'daily_requirement_limit' => env('AI_DAILY_REQUIREMENT_LIMIT', 0),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Third Party Services

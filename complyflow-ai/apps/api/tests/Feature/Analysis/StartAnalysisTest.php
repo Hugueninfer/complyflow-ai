@@ -4,6 +4,7 @@ namespace Tests\Feature\Analysis;
 
 use App\Jobs\ProcessAnalysis;
 use App\Models\AnalysisRun;
+use App\Models\Document;
 use App\Models\RequirementSet;
 use App\Services\Processor\ProcessorClient;
 use App\Support\CurrentOrganization;
@@ -121,6 +122,63 @@ class StartAnalysisTest extends AnalysisTestCase
         $this->start('over-quota')->assertStatus(429);
         $this->assertSame(1, $demo->fresh()->analyses_used);
         $this->assertDatabaseCount('analysis_runs', 1);
+        Queue::assertPushed(ProcessAnalysis::class, 1);
+    }
+
+    public function test_global_ai_budget_counts_requirements_across_accounts_but_not_idempotent_replays(): void
+    {
+        config(['services.ai.daily_requirement_limit' => 1]);
+        $this->start('first-account')->assertStatus(202);
+        $this->start('first-account')->assertOk();
+
+        $otherOrganization = $this->organization();
+        $otherUser = $this->user($otherOrganization, 'analyst');
+        $otherSupplier = $this->supplier($otherOrganization);
+        app(CurrentOrganization::class)->set($otherOrganization);
+        $otherSet = RequirementSet::create(['name' => 'Other checklist', 'version' => 1, 'status' => 'published']);
+        $otherSet->requirements()->create([
+            'code' => 'OTHER', 'title' => 'Other criterion', 'category' => 'Compliance',
+            'weight' => 1, 'position' => 1, 'evaluation_text' => 'Find other evidence.',
+        ]);
+        $otherDocument = Document::create([
+            'supplier_id' => $otherSupplier->id, 'original_name' => 'other.pdf',
+            'storage_name' => Str::uuid().'.pdf', 'mime_type' => 'application/pdf',
+            'size_bytes' => 9, 'sha256' => hash('sha256', 'other-pdf'),
+        ]);
+        app(CurrentOrganization::class)->clear();
+
+        $this->actingAs($otherUser)->postJson(
+            '/api/v1/suppliers/'.$otherSupplier->public_id.'/analyses',
+            ['requirement_set_id' => $otherSet->public_id, 'document_ids' => [$otherDocument->public_id]],
+            ['Idempotency-Key' => 'second-account'],
+        )->assertStatus(429)->assertExactJson([
+            'code' => 'ai_daily_quota_exceeded',
+            'message' => 'Daily AI analysis quota exceeded.',
+        ]);
+
+        $this->assertDatabaseCount('analysis_runs', 1);
+        $this->assertDatabaseHas('ai_usage_reservations', ['units' => 1]);
+        Queue::assertPushed(ProcessAnalysis::class, 1);
+    }
+
+    public function test_seeded_or_fake_analyses_do_not_consume_the_external_provider_budget(): void
+    {
+        config(['services.ai.daily_requirement_limit' => 1]);
+        app(CurrentOrganization::class)->set($this->organization);
+        AnalysisRun::create([
+            'supplier_id' => $this->supplier->id,
+            'requirement_set_id' => $this->set->id,
+            'idempotency_key' => 'seeded-without-provider',
+            'document_set_hash' => hash('sha256', 'seeded'),
+            'document_ids' => [$this->document->public_id],
+            'status' => 'completed',
+        ]);
+        app(CurrentOrganization::class)->clear();
+
+        $this->start('real-provider-run')->assertStatus(202);
+
+        $this->assertDatabaseCount('analysis_runs', 2);
+        $this->assertDatabaseCount('ai_usage_reservations', 1);
         Queue::assertPushed(ProcessAnalysis::class, 1);
     }
 

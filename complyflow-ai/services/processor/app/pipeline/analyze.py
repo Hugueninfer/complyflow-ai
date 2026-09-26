@@ -60,6 +60,7 @@ class AnalysisPipeline:
                 base_url=GEMINI_OPENAI_BASE_URL,
                 api_key=api_key,
                 model=os.getenv('GEMINI_MODEL', DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL,
+                reasoning_effort='low',
             ))
         if selected != 'openai-compatible' or not all(
             os.getenv(name, '').strip() for name in ('AI_BASE_URL', 'AI_API_KEY', 'AI_MODEL')

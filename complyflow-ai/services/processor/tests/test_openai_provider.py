@@ -68,6 +68,24 @@ def test_real_provider_sends_only_delimited_retrieved_data_and_closed_schema():
     assert finding == FindingDraft.model_validate(valid_response()['findings'][0])
 
 
+def test_provider_sends_configured_reasoning_effort_without_changing_generic_default():
+    observed = []
+
+    def response(request):
+        observed.append(json.loads(request.content))
+        return httpx.Response(200, json=envelope())
+
+    provider_with_response(response).analyze(requirement(), [context()])
+    configured = InProcessMockProvider(
+        base_url='https://ai.example/v1', api_key='test-only', model='demo-model',
+        reasoning_effort='low', transport=httpx.MockTransport(response),
+    )
+    configured.analyze(requirement(), [context()])
+
+    assert 'reasoning_effort' not in observed[0]
+    assert observed[1]['reasoning_effort'] == 'low'
+
+
 @pytest.mark.parametrize('change', [
     {'status': 'approved'}, {'confidence': 1.1}, {'requires_human_review': False},
     {'citations': []}, {'execute_this': 'SECRET'},

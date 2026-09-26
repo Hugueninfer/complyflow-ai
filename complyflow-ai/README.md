@@ -55,7 +55,7 @@ docker compose up --build
 
 O worker aplica migrations e seed. Aguarde os serviços; abra [localhost:5173](http://localhost:5173). O segredo exportado vale para este shell; para reutilizá-lo em outros terminais, configure seu próprio valor em `PROCESSOR_HMAC_SECRET` no `.env` local, sem versioná-lo. O Laravel gera sua APP_KEY local automaticamente. A senha `complyflow` do banco Compose é exclusivamente de desenvolvimento e o banco não publica uma porta no host.
 
-O desenvolvimento local usa `AI_PROVIDER=fake` por padrão e não chama serviços externos. Para executar análises reais com Gemini, configure `AI_PROVIDER=gemini`, `GEMINI_API_KEY` e, opcionalmente, `GEMINI_MODEL` (padrão `gemini-3.8-flash`). O deploy Render usa Gemini nas novas análises da conta owner; o tour sem senha usa resultados fictícios pré-carregados e não consome cota. Somente os cinco trechos recuperados por requisito são enviados ao Google, nunca o PDF completo automaticamente.
+O desenvolvimento local usa `AI_PROVIDER=fake` por padrão e não chama serviços externos. Para executar análises reais com Gemini, configure `AI_PROVIDER=gemini`, `GEMINI_API_KEY` e, opcionalmente, `GEMINI_MODEL` (padrão `gemini-3.8-flash`). O deploy Render usa Gemini com esforço de raciocínio baixo nas novas análises da conta owner; o tour sem senha usa resultados fictícios pré-carregados e não consome cota. Somente os cinco trechos recuperados por requisito são enviados ao Google, nunca o PDF completo automaticamente. `AI_DAILY_REQUIREMENT_LIMIT=20` protege a chave compartilhada com um orçamento global diário; `0` desativa esse limite no fake local.
 
 ## Testar
 

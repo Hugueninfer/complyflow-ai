@@ -38,13 +38,17 @@ def _delimited_json(value) -> str:
 class OpenAICompatibleProvider(AIProvider):
     _transport = None
 
-    def __init__(self, *, base_url: str, api_key: str, model: str):
+    def __init__(
+        self, *, base_url: str, api_key: str, model: str,
+        reasoning_effort: str | None = None,
+    ):
         try:
             url = urlsplit(base_url)
             valid = (
                 url.scheme in {'http', 'https'} and bool(url.hostname) and url.port != 0
                 and not url.username and not url.password and not url.query and not url.fragment
                 and bool(api_key.strip()) and bool(model.strip())
+                and reasoning_effort in {None, 'low', 'medium', 'high'}
             )
         except ValueError:
             valid = False
@@ -52,6 +56,7 @@ class OpenAICompatibleProvider(AIProvider):
             raise ProviderError('provider_not_configured')
         self.url = base_url.rstrip('/') + '/chat/completions'
         self.base_url, self.api_key, self.model = base_url, api_key, model
+        self.reasoning_effort = reasoning_effort
 
     def analyze(
         self, requirement: RequirementDraft, contexts: list[AnalysisContext], *,
@@ -72,6 +77,8 @@ class OpenAICompatibleProvider(AIProvider):
                 name='finding', strict=True, schema=FindingDraft.model_json_schema(),
             )),
         )
+        if self.reasoning_effort is not None:
+            payload['reasoning_effort'] = self.reasoning_effort
         raw = self._execute_request(payload, budget)
         try:
             result = json.loads(raw)
