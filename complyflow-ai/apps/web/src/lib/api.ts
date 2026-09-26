@@ -14,14 +14,16 @@ export class ApiError extends Error {
       422: 'Verifique os dados informados e tente novamente.',
       429: 'Muitas tentativas. Aguarde um momento e tente novamente.',
     }
-    const storageQuota = status === 413 && code === 'demo_storage_quota_exceeded'
-    super(storageQuota
-      ? 'A cota de armazenamento desta demonstração foi esgotada. Inicie uma nova demonstração para enviar mais documentos.'
-      : messages[status] ?? 'Não foi possível concluir a solicitação. Tente novamente.')
+    const safeCodeMessages: Record<string, string> = {
+      demo_storage_quota_exceeded: 'A cota de armazenamento desta demonstração foi esgotada. Inicie uma nova demonstração para enviar mais documentos.',
+      ai_daily_quota_exceeded: 'A cota diária de análises por IA foi atingida. Tente novamente após o próximo dia UTC.',
+    }
+    const safeCode = code && safeCodeMessages[code] ? code : undefined
+    super(safeCode ? safeCodeMessages[safeCode] : messages[status] ?? 'Não foi possível concluir a solicitação. Tente novamente.')
     this.name = 'ApiError'
     this.status = status
     this.fields = fields
-    this.code = storageQuota ? code : undefined
+    this.code = safeCode
   }
 }
 

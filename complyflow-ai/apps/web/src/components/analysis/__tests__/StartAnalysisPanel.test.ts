@@ -35,6 +35,7 @@ async function selectInputs() {
 describe('Start analysis selection', () => {
   it('warns that the free Gemini service processes fictitious excerpts under Google data terms', async () => {
     await openPanel()
+    expect(await screen.findByText(/nesta implantação pública no Render/i)).toBeVisible()
     expect(await screen.findByText(/conteúdo enviado e as respostas geradas são usados pelo Google/i)).toBeVisible()
     expect(screen.getByRole('link', { name: /termos da Gemini API/i })).toHaveAttribute('href', 'https://ai.google.dev/gemini-api/terms')
   })

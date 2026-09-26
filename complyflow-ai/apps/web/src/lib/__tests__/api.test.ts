@@ -64,4 +64,14 @@ describe('Sanctum transport', () => {
     await expect(api.post('/demo-sessions')).rejects.toMatchObject({ status: 500, message: 'Não foi possível concluir a solicitação. Tente novamente.' })
     expect(attempts).toBe(1)
   })
+
+  it('preserves the safe daily AI quota code and explains its UTC reset', async () => {
+    fakeServer(() => json({ code: 'ai_daily_quota_exceeded', message: 'private detail' }, 429))
+
+    await expect(api.post('/suppliers/id/analyses', {})).rejects.toMatchObject({
+      status: 429,
+      code: 'ai_daily_quota_exceeded',
+      message: 'A cota diária de análises por IA foi atingida. Tente novamente após o próximo dia UTC.',
+    })
+  })
 })
