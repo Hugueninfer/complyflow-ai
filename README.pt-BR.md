@@ -139,7 +139,7 @@ flowchart LR
     Fila --> Worker[Worker Laravel]
     Worker -->|HTTP interno assinado com HMAC| FastAPI[Processador FastAPI<br/>Python 3.12]
     FastAPI --> Pipeline[Páginas · chunks<br/>busca híbrida]
-    Pipeline --> Provider[API Gemini<br/>ou provedor local determinístico]
+    Pipeline --> Provider[Groq principal · Gemini fallback<br/>ou provedor local explícito]
     Provider -->|achados validados por schema| Worker
     Worker --> PostgreSQL
     Pessoa -->|revisão + decisão final| Laravel
@@ -179,9 +179,9 @@ sequenceDiagram
     L-->>V: Matriz disponível para revisão humana
 ```
 
-Novas análises no fluxo autenticado publicado usam a API nativa `generateContent` do Gemini. O FastAPI envia somente os cinco trechos mais relevantes de cada requisito, exige um schema JSON fechado com raciocínio mínimo e revalida documento, página, citação literal e offsets antes de o Laravel persistir qualquer resultado. O modelo `gemini-3.1-flash-lite` é escolhido por ambiente porque o Google o lista explicitamente para saída estruturada e oferece nível gratuito atualmente; cotas e disponibilidade continuam sob controle do Google. Um orçamento global serializado no banco admite no máximo 20 avaliações de requisitos por dia UTC entre todas as contas. O tour sem senha permanece pré-carregado com resultados fictícios para não consumir a cota da API durante uma avaliação do portfólio.
+Novas análises no fluxo autenticado publicado usam o GroqCloud como provedor principal com `openai/gpt-oss-20b`; o adaptador nativo `generateContent` do Gemini permanece como fallback secundário. O FastAPI envia somente os cinco trechos mais relevantes de cada requisito, exige um schema JSON fechado e revalida documento, página, citação literal e offsets antes de o Laravel persistir qualquer resultado. O provedor determinístico local é exclusivamente explícito e nunca substitui silenciosamente uma análise real. Cotas e disponibilidade dos níveis gratuitos continuam sob controle de cada provedor. Um orçamento global serializado no banco admite no máximo 20 avaliações de requisitos por dia UTC entre todas as contas. O tour sem senha permanece pré-carregado com resultados fictícios para não consumir cota durante uma avaliação do portfólio.
 
-Desenvolvimento local e CI continuam usando o provedor determinístico `fake` por padrão, sem chamada externa. A recuperação combina vetores de hashing determinístico de 384 dimensões com texto; esses vetores locais não prometem a qualidade semântica de embeddings treinados. No serviço não pago do Gemini, o Google informa que o conteúdo enviado e as respostas geradas são usados para melhorar seus produtos. A instância pública é destinada somente a documentos fictícios e mostra esse aviso antes da análise; ela não consegue comprovar tecnicamente se o PDF é fictício. Consulte os [termos da Gemini API](https://ai.google.dev/gemini-api/terms).
+Desenvolvimento local e CI continuam usando o provedor determinístico `fake` por padrão, sem chamada externa. A recuperação combina vetores de hashing determinístico de 384 dimensões com texto; esses vetores locais não prometem a qualidade semântica de embeddings treinados. O contrato do Groq declara que entradas e saídas não são usadas para treinar modelos sem permissão explícita, embora permita o processamento e a retenção necessários para fornecer e operar o serviço, aplicar políticas ou cumprir a lei. Se o fallback gratuito do Gemini for acionado, os termos do Google permitem usar conteúdo enviado e respostas geradas para melhorar produtos e realizar revisão humana. A instância pública é, portanto, destinada somente a documentos fictícios e mostra esse aviso antes da análise; ela não consegue comprovar tecnicamente se o PDF é fictício. Consulte os [termos do GroqCloud](https://console.groq.com/docs/legal/services-agreement) e os [termos da Gemini API](https://ai.google.dev/gemini-api/terms#unpaid-services) do fallback.
 
 ## Soberania humana por design
 
@@ -333,7 +333,7 @@ Veja **[Publicação no Render Free](complyflow-ai/docs/render-free-deploy.md)**
 
 ## Limitações deliberadas
 
-A demo não inclui recuperação de senha, verificação de e-mail, SSO, consultas reais a órgãos, assinatura digital, âncora externa de auditoria nem certificação automática. Sugestões do Gemini não são conclusões jurídicas ou de compliance e podem estar erradas. OCR não está ligado ao pipeline público; PDFs apenas com imagem podem ficar sem evidência. O deploy gratuito não possui SLA nem foi certificado para carga de produção.
+A demo não inclui recuperação de senha, verificação de e-mail, SSO, consultas reais a órgãos, assinatura digital, âncora externa de auditoria nem certificação automática. Sugestões dos modelos Groq/Gemini não são conclusões jurídicas ou de compliance e podem estar erradas. OCR não está ligado ao pipeline público; PDFs apenas com imagem podem ficar sem evidência. O deploy gratuito não possui SLA nem foi certificado para carga de produção.
 
 Esses limites são visíveis porque um produto responsável de compliance precisa ser preciso sobre o que não garante.
 

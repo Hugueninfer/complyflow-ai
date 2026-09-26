@@ -120,6 +120,8 @@ def request_in_child(
         _remaining(deadline, budget)
         if result[:1] == b'O':
             return result[1:]
+        if result == b'Iprovider_internal_error':
+            raise RuntimeError('provider_internal_error')
         code = result[1:].decode('ascii', errors='replace') if result[:1] == b'E' else ''
         raise ProviderError(code if code in PUBLIC_ERRORS else 'provider_unavailable')
     except ProviderError:

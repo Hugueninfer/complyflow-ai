@@ -29,12 +29,16 @@ services:
       - key: SESSION_EXPIRE_ON_CLOSE
         value: "false"
       - key: AI_PROVIDER
-        value: gemini
+        value: groq
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
       - key: GEMINI_MODEL
         value: gemini-3.1-flash-lite
       - key: AI_DAILY_REQUIREMENT_LIMIT
         value: "20"
       - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
         sync: false
 databases:
   - name: complyflow-db

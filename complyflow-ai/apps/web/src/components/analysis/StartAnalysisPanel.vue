@@ -161,7 +161,13 @@ onBeforeUnmount(() => { active = false; lifecycle++; generation++; readControlle
       Combine uma versão publicada dos requisitos com 1 a 10 PDFs deste fornecedor, até 15 MiB no total. A decisão continuará sendo humana.
     </p>
     <p class="prerequisite-note">
-      Nesta implantação pública no Render, use somente documentos fictícios. No nível gratuito, o conteúdo enviado e as respostas geradas são usados pelo Google para melhorar seus produtos. Consulte os
+      Nesta implantação pública no Render, use somente documentos fictícios. Os trechos recuperados são enviados primeiro à Groq e, após uma falha do provedor principal, podem ser enviados ao Google Gemini. No fallback gratuito do Gemini, o conteúdo e as respostas podem ser usados pelo Google para melhorar seus produtos e revisados por humanos. Não envie dados pessoais, confidenciais ou reais. Consulte os
+      <a
+        href="https://console.groq.com/docs/legal/services-agreement"
+        target="_blank"
+        rel="noreferrer"
+      >Termos do GroqCloud</a>
+      e os
       <a
         href="https://ai.google.dev/gemini-api/terms"
         target="_blank"

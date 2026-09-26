@@ -9,6 +9,7 @@ import sys
 from time import monotonic
 
 from app.processes import bind_to_parent
+from app.providers.base import ProviderError
 from app.providers.process_isolation import MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, PUBLIC_ERRORS
 
 
@@ -33,13 +34,16 @@ def main() -> None:
         resource.setrlimit(resource.RLIMIT_AS, (256 * 1024 * 1024,) * 2)
         resource.setrlimit(resource.RLIMIT_CPU, (20, 20))
         bind_to_parent(int(os.environ['CF_PROCESSOR_PARENT_PID']))
-        size = struct.unpack('!I', _read_exact(sys.stdin.buffer, 4))[0]
-        if not 1 <= size <= MAX_REQUEST_BYTES:
-            raise ValueError
-        request = json.loads(_read_exact(sys.stdin.buffer, size))
-        remaining = request['deadline'] - monotonic()
-        if not math.isfinite(remaining) or not 0 < remaining <= 40:
-            raise ValueError
+        try:
+            size = struct.unpack('!I', _read_exact(sys.stdin.buffer, 4))[0]
+            if not 1 <= size <= MAX_REQUEST_BYTES:
+                raise ValueError
+            request = json.loads(_read_exact(sys.stdin.buffer, size))
+            remaining = request['deadline'] - monotonic()
+            if not math.isfinite(remaining) or not 0 < remaining <= 40:
+                raise ValueError
+        except (KeyError, TypeError, ValueError, struct.error):
+            raise ProviderError('provider_unavailable') from None
         import anyio
         from app.execution import ExecutionBudget
         provider_kind = request.get('provider_kind', 'openai-compatible')
@@ -55,9 +59,11 @@ def main() -> None:
             raise ValueError
         raw = anyio.run(provider._request, request['payload'], ExecutionBudget(request['deadline'] - monotonic()))
         message = b'O' + raw if len(raw) <= MAX_RESPONSE_BYTES else b'Einvalid_provider_response'
-    except BaseException as error:
+    except ProviderError as error:
         candidate = str(error)
         message = b'E' + (candidate if candidate in PUBLIC_ERRORS else 'provider_unavailable').encode('ascii')
+    except BaseException:
+        message = b'Iprovider_internal_error'
     try:
         framed = struct.pack('!I', len(message)) + message
         offset = 0

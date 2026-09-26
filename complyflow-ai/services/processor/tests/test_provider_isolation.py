@@ -277,13 +277,29 @@ def test_lease_and_capacity_remain_held_until_reap_and_retry_then_succeeds(monke
     ('crash', 'provider_unavailable'), ('crash_descendant', 'provider_unavailable'),
     ('oversize', 'invalid_provider_response'), ('partial', 'analysis_budget_exceeded'),
     ('error_secret', 'provider_unavailable'), ('malformed', 'invalid_provider_response'),
-    ('http_oversize', 'invalid_provider_response'), ('exception', 'provider_unavailable'),
+    ('http_oversize', 'invalid_provider_response'),
 ])
 def test_child_crashes_and_untrusted_frames_are_bounded_sanitized_and_reaped(child_probe, mode, expected, capfd):
     modes, path = child_probe
     modes[0] = mode
     with pytest.raises((ProviderError, ExecutionStopped), match=f'^{expected}$'):
         provider().analyze(requirement(), [context()], budget=ExecutionBudget(2 if mode == 'partial' else 5))
+    assert_reaped(wait_state(path))
+    captured = capfd.readouterr()
+    assert 'SECRET' not in captured.out + captured.err
+
+
+def test_child_internal_error_is_sanitized_without_triggering_provider_fallback(child_probe, capfd):
+    from app.providers.failover import FailoverProvider
+    from app.providers.fake import FakeAIProvider
+
+    modes, path = child_probe
+    modes[0] = 'exception'
+    chain = FailoverProvider([provider(), FakeAIProvider()])
+
+    with pytest.raises(RuntimeError, match='^provider_internal_error$'):
+        chain.analyze(requirement(), [context()], budget=ExecutionBudget(5))
+
     assert_reaped(wait_state(path))
     captured = capfd.readouterr()
     assert 'SECRET' not in captured.out + captured.err

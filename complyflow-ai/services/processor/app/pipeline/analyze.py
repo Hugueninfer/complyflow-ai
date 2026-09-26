@@ -13,6 +13,7 @@ from app.execution import ExecutionBudget
 from app.pdf.chunker import chunk_pages
 from app.pdf.extractor import MAX_PDF_BYTES, extract_pages
 from app.providers.base import AIProvider, AnalysisContext, ProviderError
+from app.providers.failover import FailoverProvider
 from app.providers.fake import FakeAIProvider
 from app.retrieval.hybrid import HybridRetriever, embed_text
 from app.schemas import (
@@ -26,6 +27,8 @@ MAX_DOCUMENTS = 10
 MAX_REQUIREMENTS = 100
 MAX_TOTAL_PDF_BYTES = 15 * 1024 * 1024
 DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite'
+DEFAULT_GROQ_MODEL = 'openai/gpt-oss-20b'
+GROQ_BASE_URL = 'https://api.groq.com/openai/v1'
 
 
 class AnalysisError(ValueError):
@@ -46,7 +49,7 @@ class AnalysisPipeline:
 
     @classmethod
     def from_settings(cls):
-        selected = os.getenv('AI_PROVIDER', 'fake')
+        selected = os.getenv('AI_PROVIDER', '').strip()
         if selected == 'fake':
             return cls(FakeAIProvider())
         if selected == 'gemini':
@@ -59,6 +62,28 @@ class AnalysisPipeline:
                 api_key=api_key,
                 model=os.getenv('GEMINI_MODEL', DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL,
             ))
+        if selected == 'groq':
+            api_key = os.getenv('GROQ_API_KEY', '').strip()
+            if not api_key:
+                raise ProviderError('provider_not_configured')
+            from app.providers.failover import FailoverProvider
+            from app.providers.openai_compatible import OpenAICompatibleProvider
+
+            primary = OpenAICompatibleProvider(
+                base_url=GROQ_BASE_URL, api_key=api_key,
+                model=os.getenv('GROQ_MODEL', DEFAULT_GROQ_MODEL).strip() or DEFAULT_GROQ_MODEL,
+                timeout_seconds=15,
+            )
+            gemini_key = os.getenv('GEMINI_API_KEY', '').strip()
+            if not gemini_key:
+                return cls(primary)
+            from app.providers.gemini import GeminiProvider
+
+            fallback = GeminiProvider(
+                api_key=gemini_key,
+                model=os.getenv('GEMINI_MODEL', DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL,
+            )
+            return cls(FailoverProvider([primary, fallback]))
         if selected != 'openai-compatible' or not all(
             os.getenv(name, '').strip() for name in ('AI_BASE_URL', 'AI_API_KEY', 'AI_MODEL')
         ):
@@ -83,6 +108,25 @@ class AnalysisPipeline:
             text = pages.get((citation.document_id, citation.page_number))
             if text is None or citation.end_offset > len(text) or (
                 text[citation.start_offset:citation.end_offset] != citation.quote
+            ):
+                raise InvalidCitation('invalid_citation')
+        return finding
+
+    def analyze_finding(
+        self, provider: AIProvider, requirement, selected: list[AnalysisContext],
+        documents: list[ProcessedDocumentDraft], budget: ExecutionBudget,
+    ) -> FindingDraft:
+        draft = provider.analyze(requirement, selected, budget=budget)
+        budget.checkpoint()
+        finding = self.validate_finding(draft, documents)
+        if finding.requirement_id != requirement.requirement_id:
+            raise InvalidFinding('invalid_finding')
+        for citation in finding.citations:
+            if not any(
+                citation.document_id == context.document_id
+                and citation.page_number == context.page_number
+                and context.start_offset <= citation.start_offset < citation.end_offset <= context.end_offset
+                for context in selected
             ):
                 raise InvalidCitation('invalid_citation')
         return finding
@@ -149,19 +193,17 @@ class AnalysisPipeline:
             budget.checkpoint()
             selected = retriever.search(requirement.criterion + ' ' + requirement.evaluation_text, budget=budget)
             budget.checkpoint()
-            draft = self.provider.analyze(requirement, selected, budget=budget)
-            budget.checkpoint()
-            finding = self.validate_finding(draft, documents)
-            if finding.requirement_id != requirement.requirement_id:
-                raise InvalidFinding('invalid_finding')
-            for citation in finding.citations:
-                if not any(
-                    citation.document_id == context.document_id
-                    and citation.page_number == context.page_number
-                    and context.start_offset <= citation.start_offset < citation.end_offset <= context.end_offset
-                    for context in selected
-                ):
-                    raise InvalidCitation('invalid_citation')
+            if isinstance(self.provider, FailoverProvider):
+                finding = self.provider.attempt(
+                    lambda provider: self.analyze_finding(
+                        provider, requirement, selected, documents, budget,
+                    ),
+                    budget=budget,
+                )
+            else:
+                finding = self.analyze_finding(
+                    self.provider, requirement, selected, documents, budget,
+                )
             findings.append(finding)
         result = AnalyzeResponse(analysis_id=request.analysis_id, findings=findings, processed_documents=documents)
         budget.checkpoint()

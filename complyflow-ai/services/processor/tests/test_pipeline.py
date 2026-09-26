@@ -103,13 +103,14 @@ def test_real_provider_requires_all_explicit_settings(monkeypatch, missing):
         AnalysisPipeline.from_settings()
 
 
-def test_keys_alone_never_enable_real_provider(monkeypatch):
+def test_provider_must_be_selected_explicitly_even_when_keys_exist(monkeypatch):
     from app.pipeline.analyze import AnalysisPipeline
-    from app.providers.fake import FakeAIProvider
+    from app.providers.base import ProviderError
 
     monkeypatch.delenv('AI_PROVIDER', raising=False)
     monkeypatch.setenv('AI_API_KEY', 'test-only')
-    assert isinstance(AnalysisPipeline.from_settings().provider, FakeAIProvider)
+    with pytest.raises(ProviderError, match='^provider_not_configured$'):
+        AnalysisPipeline.from_settings()
 
 
 def test_gemini_provider_uses_official_endpoint_and_free_model_by_default(monkeypatch):
@@ -138,6 +139,75 @@ def test_gemini_provider_requires_its_dedicated_api_key(monkeypatch):
 
     with pytest.raises(ProviderError, match='^provider_not_configured$'):
         AnalysisPipeline.from_settings()
+
+
+def test_groq_is_primary_and_gemini_is_fallback_when_both_keys_exist(monkeypatch):
+    from app.pipeline.analyze import AnalysisPipeline
+    from app.providers.failover import FailoverProvider
+    from app.providers.gemini import GeminiProvider
+    from app.providers.openai_compatible import OpenAICompatibleProvider
+
+    monkeypatch.setenv('AI_PROVIDER', 'groq')
+    monkeypatch.setenv('GROQ_API_KEY', 'groq-test-only')
+    monkeypatch.setenv('GEMINI_API_KEY', 'gemini-test-only')
+    monkeypatch.delenv('GROQ_MODEL', raising=False)
+
+    provider = AnalysisPipeline.from_settings().provider
+
+    assert isinstance(provider, FailoverProvider)
+    assert len(provider.providers) == 2
+    primary, fallback = provider.providers
+    assert isinstance(primary, OpenAICompatibleProvider)
+    assert primary.base_url == 'https://api.groq.com/openai/v1'
+    assert primary.model == 'openai/gpt-oss-20b'
+    assert primary.api_key == 'groq-test-only'
+    assert primary.timeout_seconds == 15
+    assert isinstance(fallback, GeminiProvider)
+    assert fallback.api_key == 'gemini-test-only'
+
+
+def test_groq_works_without_gemini_key(monkeypatch):
+    from app.pipeline.analyze import AnalysisPipeline
+    from app.providers.openai_compatible import OpenAICompatibleProvider
+
+    monkeypatch.setenv('AI_PROVIDER', 'groq')
+    monkeypatch.setenv('GROQ_API_KEY', 'groq-test-only')
+    monkeypatch.delenv('GEMINI_API_KEY', raising=False)
+
+    provider = AnalysisPipeline.from_settings().provider
+
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider.base_url == 'https://api.groq.com/openai/v1'
+
+
+def test_groq_requires_its_dedicated_api_key(monkeypatch):
+    from app.pipeline.analyze import AnalysisPipeline
+    from app.providers.base import ProviderError
+
+    monkeypatch.setenv('AI_PROVIDER', 'groq')
+    monkeypatch.delenv('GROQ_API_KEY', raising=False)
+    monkeypatch.setenv('AI_API_KEY', 'must-not-enable-groq')
+
+    with pytest.raises(ProviderError, match='^provider_not_configured$'):
+        AnalysisPipeline.from_settings()
+
+
+def test_failover_retries_when_primary_returns_semantically_invalid_citation():
+    from app.pipeline.analyze import AnalysisPipeline
+    from app.providers.failover import FailoverProvider
+    from app.providers.fake import FakeAIProvider
+
+    class InvalidCitationProvider:
+        def analyze(self, requirement, contexts, *, budget=None):
+            valid = FakeAIProvider().analyze(requirement, contexts, budget=budget)
+            invalid = valid.citations[0].model_copy(update={'quote': 'evidência inventada'})
+            return valid.model_copy(update={'citations': [invalid]})
+
+    result = AnalysisPipeline(FailoverProvider([
+        InvalidCitationProvider(), FakeAIProvider(),
+    ])).run(pdf_request())
+
+    assert result.findings[0].citations[0].quote == 'Primeira pagina'
 
 
 def test_chunk_budget_fails_before_building_embeddings(monkeypatch):

@@ -139,7 +139,7 @@ flowchart LR
     Queue --> Worker[Laravel worker]
     Worker -->|HMAC-signed internal HTTP| FastAPI[FastAPI processor<br/>Python 3.12]
     FastAPI --> Pipeline[PDF pages · chunks<br/>hybrid retrieval]
-    Pipeline --> Provider[Gemini API<br/>or deterministic local provider]
+    Pipeline --> Provider[Groq primary · Gemini fallback<br/>or explicit deterministic local provider]
     Provider -->|schema-validated findings| Worker
     Worker --> PostgreSQL
     Human -->|review + final decision| Laravel
@@ -179,9 +179,9 @@ sequenceDiagram
     L-->>V: Evidence matrix ready for human review
 ```
 
-New analyses in the deployed owner workflow use Google's native Gemini `generateContent` API. FastAPI sends only the five highest-ranked excerpts for each requirement, requests a closed JSON schema with minimal reasoning, and revalidates the returned document, page, exact quote and offsets before Laravel persists anything. `gemini-3.1-flash-lite` is selected by environment because Google explicitly lists it for structured output and currently provides a Gemini free tier; quotas and model availability remain controlled by Google. A global database-serialized budget admits at most 20 requirement evaluations per UTC day across all accounts. The passwordless showcase itself remains pre-seeded with fictitious results so a recruiter can tour it without consuming API quota.
+New analyses in the deployed owner workflow use GroqCloud as the primary provider with `openai/gpt-oss-20b`; the native Gemini `generateContent` adapter remains a secondary fallback. FastAPI sends only the five highest-ranked excerpts for each requirement, requests a closed JSON schema, and revalidates the returned document, page, exact quote and offsets before Laravel persists anything. The deterministic local provider is explicit-only and is never used as a silent fallback for real analyses. Free-tier quotas and model availability remain controlled by each provider. A global database-serialized budget admits at most 20 requirement evaluations per UTC day across all accounts. The passwordless showcase itself remains pre-seeded with fictitious results so a recruiter can tour it without consuming API quota.
 
-Local development and CI keep the deterministic `fake` provider as their default and make no external AI call. Retrieval still combines deterministic 384-dimensional hashing vectors with textual matching; these local vectors do **not** claim the semantic quality of trained embeddings. Under the unpaid Gemini service, Google states that submitted content and generated responses are used to improve its products. The public portfolio instance is intended only for fictitious documents and shows this warning before analysis; it cannot technically prove that an uploaded PDF is fictitious. See the [Gemini API terms](https://ai.google.dev/gemini-api/terms).
+Local development and CI keep the deterministic `fake` provider as their default and make no external AI call. Retrieval still combines deterministic 384-dimensional hashing vectors with textual matching; these local vectors do **not** claim the semantic quality of trained embeddings. Groq's agreement says inputs and outputs are not used for model training without explicit permission, while allowing processing and retention needed to provide and operate the service, enforce policy or comply with law. If the unpaid Gemini fallback is reached, Google's terms allow submitted content and generated responses to be used to improve products and reviewed by humans. The public portfolio instance is therefore intended only for fictitious documents and shows this warning before analysis; it cannot technically prove that an uploaded PDF is fictitious. See the [GroqCloud Services Agreement](https://console.groq.com/docs/legal/services-agreement) and the fallback [Gemini API terms](https://ai.google.dev/gemini-api/terms#unpaid-services).
 
 ## Human sovereignty by design
 
@@ -344,7 +344,7 @@ For reproducible setup and recovery instructions, see **[Deploying on Render Fre
 
 ## Deliberate limitations
 
-This demonstration does not include password recovery, e-mail verification, SSO, real government-registry integrations, digital signatures, external audit anchoring or automatic supplier certification. Gemini suggestions are not legal or compliance conclusions and may be wrong. OCR is not connected to the public pipeline, so image-only PDFs may produce no evidence. The free deployment has no SLA and has not been certified for production load.
+This demonstration does not include password recovery, e-mail verification, SSO, real government-registry integrations, digital signatures, external audit anchoring or automatic supplier certification. Groq/Gemini model suggestions are not legal or compliance conclusions and may be wrong. OCR is not connected to the public pipeline, so image-only PDFs may produce no evidence. The free deployment has no SLA and has not been certified for production load.
 
 These constraints are visible because a trustworthy compliance product should be precise about what it cannot guarantee.
 
@@ -357,7 +357,7 @@ These constraints are visible because a trustworthy compliance product should be
 - add OCR with sandboxing and the same citation guarantees;
 - paginate very large matrices and audit streams;
 - add scheduled demo cleanup, backups and privacy-safe observability;
-- add formal Gemini evaluation datasets, quota telemetry and stronger redaction controls;
+- add formal provider evaluation datasets, quota telemetry and stronger redaction controls;
 - add e-mail verification, password recovery and enterprise identity providers;
 - externally anchor audit-chain checkpoints where regulatory context requires it.
 

@@ -33,10 +33,12 @@ async function selectInputs() {
 }
 
 describe('Start analysis selection', () => {
-  it('warns that the free Gemini service processes fictitious excerpts under Google data terms', async () => {
+  it('warns that Groq and the Gemini fallback process only fictitious excerpts under both terms', async () => {
     await openPanel()
     expect(await screen.findByText(/nesta implantação pública no Render/i)).toBeVisible()
-    expect(await screen.findByText(/conteúdo enviado e as respostas geradas são usados pelo Google/i)).toBeVisible()
+    expect(await screen.findByText(/trechos recuperados são enviados primeiro à Groq e.*Google Gemini/i)).toBeVisible()
+    expect(screen.getByText(/no fallback gratuito do Gemini.*usados pelo Google para melhorar seus produtos.*revisados por humanos/i)).toBeVisible()
+    expect(screen.getByRole('link', { name: /termos do GroqCloud/i })).toHaveAttribute('href', 'https://console.groq.com/docs/legal/services-agreement')
     expect(screen.getByRole('link', { name: /termos da Gemini API/i })).toHaveAttribute('href', 'https://ai.google.dev/gemini-api/terms')
   })
 
