@@ -38,7 +38,7 @@ def main() -> None:
             raise ValueError
         request = json.loads(_read_exact(sys.stdin.buffer, size))
         remaining = request['deadline'] - monotonic()
-        if not math.isfinite(remaining) or not 0 < remaining <= 20:
+        if not math.isfinite(remaining) or not 0 < remaining <= 40:
             raise ValueError
         import anyio
         from app.execution import ExecutionBudget

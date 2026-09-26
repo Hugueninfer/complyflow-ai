@@ -25,7 +25,7 @@ provider = openai_compatible.OpenAICompatibleProvider(
 )
 active = ActiveAnalyses()
 before = {thread.ident for thread in threads()}
-assert openai_compatible.PROVIDER_TIMEOUT_SECONDS == 20
+assert openai_compatible.PROVIDER_TIMEOUT_SECONDS == 40
 original_reap = process_isolation.reap_group
 descendant_exits = []
 
@@ -67,7 +67,7 @@ with TemporaryDirectory(prefix='provider-isolation-smoke-') as directory:
         events_path = state_path.with_suffix('.events')
         try:
             # Readiness is separate from the stop assertion, never from the
-            # real provider deadline (20 s) which has counted startup all along.
+            # real provider deadline (40 s) which has counted startup all along.
             while True:
                 events = json.loads(events_path.read_text()) if events_path.exists() else []
                 stages = {event['stage'] for event in events}

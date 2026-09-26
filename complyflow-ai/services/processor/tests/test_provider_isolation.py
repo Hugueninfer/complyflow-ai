@@ -195,7 +195,7 @@ def test_native_dns_and_descendant_are_killed_reaped_and_do_not_leak_threads(mon
     if stop == 'cancel':
         budget.cancel()
     else:
-        clock.offset += 21 if stop == 'operation' else 6
+        clock.offset += 41 if stop == 'operation' else 6
     stopped_at = monotonic()
     thread.join(2)
     assert not thread.is_alive(), 'provider thread survived deadline/cancellation'

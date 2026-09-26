@@ -127,7 +127,7 @@ def test_real_provider_sanitizes_timeout_and_uses_finite_deadline(caplog):
     from app.providers.base import ProviderError
 
     def timeout(request):
-        assert all(0 < value <= 20 for value in request.extensions['timeout'].values())
+        assert all(0 < value <= 40 for value in request.extensions['timeout'].values())
         raise httpx.ReadTimeout('SECRET URL and document', request=request)
 
     with pytest.raises(ProviderError, match='^provider_unavailable$') as error:
@@ -166,7 +166,7 @@ def test_streaming_response_cannot_extend_total_provider_deadline(monkeypatch):
 
     class SlowStream(httpx.AsyncByteStream):
         async def __aiter__(self):
-            clock['now'] = 20.1
+            clock['now'] = 40.1
             yield json.dumps(envelope()).encode()
 
     provider = provider_with_response(lambda request: httpx.Response(200, stream=SlowStream()))
@@ -269,7 +269,7 @@ def test_identity_response_has_equal_wire_and_decoded_byte_limits(size, accepted
             provider.analyze(requirement(), [context()])
 
 
-@pytest.mark.parametrize('elapsed,expected_timeout', [(0, 20), (43, 2)])
+@pytest.mark.parametrize('elapsed,expected_timeout', [(0, 40), (43, 2)])
 def test_provider_caps_http_by_remaining_analysis_time(elapsed, expected_timeout):
     from test_execution_budget import Clock
 
