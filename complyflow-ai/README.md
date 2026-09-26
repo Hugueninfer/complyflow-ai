@@ -35,7 +35,7 @@ flowchart LR
     Fila --> Worker[Worker Laravel]
     Worker -->|HTTP com HMAC| Python[FastAPI · Python 3.12]
     Python --> PDF[PDF · páginas · chunks · busca híbrida]
-    PDF --> Provider[Fake determinístico ou adaptador opcional]
+    PDF --> Provider[Gemini API ou fake local determinístico]
     Provider -->|Resultados validados| Worker
     Worker --> DB
     Pessoa -->|Revisão e decisão explícitas| API
@@ -55,7 +55,7 @@ docker compose up --build
 
 O worker aplica migrations e seed. Aguarde os serviços; abra [localhost:5173](http://localhost:5173). O segredo exportado vale para este shell; para reutilizá-lo em outros terminais, configure seu próprio valor em `PROCESSOR_HMAC_SECRET` no `.env` local, sem versioná-lo. O Laravel gera sua APP_KEY local automaticamente. A senha `complyflow` do banco Compose é exclusivamente de desenvolvimento e o banco não publica uma porta no host.
 
-O provedor `fake` é o padrão e não chama serviços externos. Downloads de imagens/pacotes exigem internet na preparação. A demo usa resultados fictícios pré-carregados; o pipeline de análise de novos PDFs é executado pela fila na conta owner.
+O desenvolvimento local usa `AI_PROVIDER=fake` por padrão e não chama serviços externos. Para executar análises reais com Gemini, configure `AI_PROVIDER=gemini`, `GEMINI_API_KEY` e, opcionalmente, `GEMINI_MODEL` (padrão `gemini-3.8-flash`). O deploy Render usa Gemini nas novas análises da conta owner; o tour sem senha usa resultados fictícios pré-carregados e não consome cota. Somente os cinco trechos recuperados por requisito são enviados ao Google, nunca o PDF completo automaticamente.
 
 ## Testar
 
@@ -89,7 +89,7 @@ O [guia de publicação](docs/render-free-deploy.md) descreve o Blueprint, gera�
 
 ## Limitações e próximos passos
 
-Não há recuperação de senha, verificação de e-mail, consultas reais a órgãos públicos, certificações de segurança, assinatura digital ou homologação automática. O fake não mede conformidade real. OCR não está conectado ao pipeline público; PDFs somente imagem podem resultar sem evidência. O plano gratuito não é uma oferta de produção com SLA, e a capacidade sob carga não foi certificada.
+Não há recuperação de senha, verificação de e-mail, consultas reais a órgãos públicos, certificações de segurança, assinatura digital ou homologação automática. Sugestões do Gemini podem errar e não medem conformidade jurídica. OCR não está conectado ao pipeline público; PDFs somente imagem podem resultar sem evidência. O plano gratuito não é uma oferta de produção com SLA, e a capacidade sob carga não foi certificada.
 
 Próximos passos: armazenamento de objetos, serviços/filas separados, cache compartilhado de replay antes de escalar, outbox e reconciliação operacional de jobs interrompidos, paginação de matrizes grandes, limpeza periódica de demos, backups e observabilidade sem conteúdo sensível. Existem quatro avisos de depreciação Python sobre fork em processo multithread e um sobre TestClient/httpx; a suíte passa e esses pontos exigem evolução antes de ampliar concorrência.
 

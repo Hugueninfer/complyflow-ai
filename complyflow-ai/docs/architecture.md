@@ -13,7 +13,7 @@ Entidades de negócio possuem `organization_id` e UUID público. IDs enviados pe
 1. Uma pessoa autorizada escolhe versão publicada de requisitos e 1–10 PDFs do fornecedor. A soma máxima é 15 MiB e o checklist tem até 100 requisitos.
 2. Laravel valida escopo, cotas e chave idempotente, persiste `pending` e agenda após commit.
 3. Um worker adquire lock e identidade da reserva, persiste `processing` e chama o Python com HMAC dos bytes exatos, timestamp e nonce.
-4. Python valida autenticação/schema, extrai páginas em subprocesso limitado, separa chunks, busca contexto e valida saída do provedor. O padrão fake não usa rede. OCR opcional existe como adaptador, mas não está conectado ao pipeline público.
+4. Python valida autenticação/schema, extrai páginas em subprocesso limitado, separa chunks, recupera até cinco contextos por requisito e valida a saída do provedor. O Render seleciona Gemini; desenvolvimento e CI usam o fake determinístico sem rede. OCR opcional existe como adaptador, mas não está conectado ao pipeline público.
 5. Laravel repete validações de IDs, estado, páginas, citações e offsets. Persiste artefatos e `completed` na mesma transação; falhas expõem códigos sanitizados.
 6. A pessoa revisa achados; outra operação explícita registra a decisão, somente para análise/checklist atuais e após todas as revisões obrigatórias.
 

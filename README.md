@@ -139,7 +139,7 @@ flowchart LR
     Queue --> Worker[Laravel worker]
     Worker -->|HMAC-signed internal HTTP| FastAPI[FastAPI processor<br/>Python 3.12]
     FastAPI --> Pipeline[PDF pages · chunks<br/>hybrid retrieval]
-    Pipeline --> Provider[Deterministic fake provider<br/>or optional adapter]
+    Pipeline --> Provider[Gemini API<br/>or deterministic local provider]
     Provider -->|schema-validated findings| Worker
     Worker --> PostgreSQL
     Human -->|review + final decision| Laravel
@@ -179,7 +179,9 @@ sequenceDiagram
     L-->>V: Evidence matrix ready for human review
 ```
 
-The default `fake` provider is deterministic and makes no external AI call. That keeps the public demo free, reproducible and testable. The retrieval layer combines deterministic 384-dimensional hashing vectors with textual matching; it does **not** claim the semantic quality of a trained embedding model.
+New analyses in the deployed owner workflow use Google's Gemini API through its official OpenAI-compatible endpoint. FastAPI sends only the five highest-ranked excerpts for each requirement, requests a closed JSON schema, and revalidates the returned document, page, exact quote and offsets before Laravel persists anything. `gemini-3.8-flash` is selected by environment and currently has a free tier; quotas and model availability remain controlled by Google. The passwordless showcase itself remains pre-seeded with fictitious results so a recruiter can tour it without consuming API quota.
+
+Local development and CI keep the deterministic `fake` provider as their default and make no external AI call. Retrieval still combines deterministic 384-dimensional hashing vectors with textual matching; these local vectors do **not** claim the semantic quality of trained embeddings. Free-tier Gemini prompts may be used by Google to improve its products, so the public portfolio instance accepts fictitious documents only.
 
 ## Human sovereignty by design
 
@@ -342,7 +344,7 @@ For reproducible setup and recovery instructions, see **[Deploying on Render Fre
 
 ## Deliberate limitations
 
-This demonstration does not include password recovery, e-mail verification, SSO, real government-registry integrations, digital signatures, external audit anchoring or automatic supplier certification. The deterministic provider does not measure real compliance. OCR is not connected to the public pipeline, so image-only PDFs may produce no evidence. The free deployment has no SLA and has not been certified for production load.
+This demonstration does not include password recovery, e-mail verification, SSO, real government-registry integrations, digital signatures, external audit anchoring or automatic supplier certification. Gemini suggestions are not legal or compliance conclusions and may be wrong. OCR is not connected to the public pipeline, so image-only PDFs may produce no evidence. The free deployment has no SLA and has not been certified for production load.
 
 These constraints are visible because a trustworthy compliance product should be precise about what it cannot guarantee.
 
@@ -355,7 +357,7 @@ These constraints are visible because a trustworthy compliance product should be
 - add OCR with sandboxing and the same citation guarantees;
 - paginate very large matrices and audit streams;
 - add scheduled demo cleanup, backups and privacy-safe observability;
-- integrate a real model provider behind evaluation, cost and redaction controls;
+- add formal Gemini evaluation datasets, quota telemetry and stronger redaction controls;
 - add e-mail verification, password recovery and enterprise identity providers;
 - externally anchor audit-chain checkpoints where regulatory context requires it.
 

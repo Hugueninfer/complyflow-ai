@@ -29,7 +29,11 @@ services:
       - key: SESSION_EXPIRE_ON_CLOSE
         value: "false"
       - key: AI_PROVIDER
-        value: fake
+        value: gemini
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+      - key: GEMINI_API_KEY
+        sync: false
 databases:
   - name: complyflow-db
     databaseName: complyflow

@@ -115,6 +115,9 @@ services:
     environment:
       PROCESSOR_HMAC_SECRET: ${PROCESSOR_HMAC_SECRET:-}
       PROCESSOR_ANALYSIS_TIMEOUT_SECONDS: ${PROCESSOR_ANALYSIS_TIMEOUT_SECONDS:-45}
+      AI_PROVIDER: ${AI_PROVIDER:-fake}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
     command: uvicorn app.main:app --host=0.0.0.0 --port=8001 --reload
     ports:
       - "${PROCESSOR_PORT:-8001}:8001"

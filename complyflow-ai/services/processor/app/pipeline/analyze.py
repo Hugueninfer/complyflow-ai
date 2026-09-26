@@ -25,6 +25,8 @@ MAX_CHUNKS = 2000
 MAX_DOCUMENTS = 10
 MAX_REQUIREMENTS = 100
 MAX_TOTAL_PDF_BYTES = 15 * 1024 * 1024
+GEMINI_OPENAI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/'
+DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash'
 
 
 class AnalysisError(ValueError):
@@ -48,6 +50,17 @@ class AnalysisPipeline:
         selected = os.getenv('AI_PROVIDER', 'fake')
         if selected == 'fake':
             return cls(FakeAIProvider())
+        if selected == 'gemini':
+            api_key = os.getenv('GEMINI_API_KEY', '').strip()
+            if not api_key:
+                raise ProviderError('provider_not_configured')
+            from app.providers.openai_compatible import OpenAICompatibleProvider
+
+            return cls(OpenAICompatibleProvider(
+                base_url=GEMINI_OPENAI_BASE_URL,
+                api_key=api_key,
+                model=os.getenv('GEMINI_MODEL', DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL,
+            ))
         if selected != 'openai-compatible' or not all(
             os.getenv(name, '').strip() for name in ('AI_BASE_URL', 'AI_API_KEY', 'AI_MODEL')
         ):

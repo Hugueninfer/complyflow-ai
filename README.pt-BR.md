@@ -139,7 +139,7 @@ flowchart LR
     Fila --> Worker[Worker Laravel]
     Worker -->|HTTP interno assinado com HMAC| FastAPI[Processador FastAPI<br/>Python 3.12]
     FastAPI --> Pipeline[Páginas · chunks<br/>busca híbrida]
-    Pipeline --> Provider[Fake determinístico<br/>ou adaptador opcional]
+    Pipeline --> Provider[API Gemini<br/>ou provedor local determinístico]
     Provider -->|achados validados por schema| Worker
     Worker --> PostgreSQL
     Pessoa -->|revisão + decisão final| Laravel
@@ -179,7 +179,9 @@ sequenceDiagram
     L-->>V: Matriz disponível para revisão humana
 ```
 
-O provedor `fake` é determinístico e não chama IA externa. Isso mantém a demo gratuita, reproduzível e testável. A recuperação combina vetores de hashing determinístico com texto; não promete a qualidade semântica de embeddings treinados.
+Novas análises no fluxo autenticado publicado usam a API Gemini do Google pelo endpoint oficial compatível com OpenAI. O FastAPI envia somente os cinco trechos mais relevantes de cada requisito, exige um schema JSON fechado e revalida documento, página, citação literal e offsets antes de o Laravel persistir qualquer resultado. O modelo `gemini-3.8-flash` é escolhido por ambiente e possui nível gratuito atualmente; cotas e disponibilidade continuam sob controle do Google. O tour sem senha permanece pré-carregado com resultados fictícios para não consumir a cota da API durante uma avaliação do portfólio.
+
+Desenvolvimento local e CI continuam usando o provedor determinístico `fake` por padrão, sem chamada externa. A recuperação combina vetores de hashing determinístico de 384 dimensões com texto; esses vetores locais não prometem a qualidade semântica de embeddings treinados. Prompts do nível gratuito do Gemini podem ser usados pelo Google para melhorar seus produtos; por isso, a instância pública aceita somente documentos fictícios.
 
 ## Soberania humana por design
 
@@ -331,7 +333,7 @@ Veja **[Publicação no Render Free](complyflow-ai/docs/render-free-deploy.md)**
 
 ## Limitações deliberadas
 
-A demo não inclui recuperação de senha, verificação de e-mail, SSO, consultas reais a órgãos, assinatura digital, âncora externa de auditoria nem certificação automática. O provedor determinístico não mede conformidade real. OCR não está ligado ao pipeline público; PDFs apenas com imagem podem ficar sem evidência. O deploy gratuito não possui SLA nem foi certificado para carga de produção.
+A demo não inclui recuperação de senha, verificação de e-mail, SSO, consultas reais a órgãos, assinatura digital, âncora externa de auditoria nem certificação automática. Sugestões do Gemini não são conclusões jurídicas ou de compliance e podem estar erradas. OCR não está ligado ao pipeline público; PDFs apenas com imagem podem ficar sem evidência. O deploy gratuito não possui SLA nem foi certificado para carga de produção.
 
 Esses limites são visíveis porque um produto responsável de compliance precisa ser preciso sobre o que não garante.
 

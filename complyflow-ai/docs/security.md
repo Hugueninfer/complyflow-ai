@@ -48,7 +48,9 @@ Revisões e decisões são append-only, com autor, justificativa e idempotência
 
 `.env` não é versionado nem enviado ao build; não passe segredos via build args. Render gera `APP_KEY_MATERIAL` e `PROCESSOR_HMAC_SECRET`; a conexão vem do banco associado. O entrypoint deriva a APP_KEY sem imprimi-la e cria caches somente em runtime. Conserve o material entre deploys: trocá-lo invalida sessões e dados cifrados. O banco gratuito é configurado sem acesso externo (`ipAllowList: []`). O serviço roda como UID10001; somente cache/storage/tmp são graváveis.
 
-O provedor fake padrão não envia documentos para terceiros. Para usar o adaptador `openai-compatible`, é preciso configurar explicitamente `AI_PROVIDER`, `AI_BASE_URL`, `AI_MODEL` e `AI_API_KEY` e avaliar o destino, contratos e retenção do operador escolhido. Use HTTPS e um endpoint confiável. Somente contexto recuperado é enviado, mas esse contexto pode conter informação sensível. Nenhuma chave é necessária para avaliar a demo.
+Desenvolvimento e CI usam o provedor `fake` por padrão e não enviam documentos a terceiros. O Render seleciona `AI_PROVIDER=gemini`: exige `GEMINI_API_KEY`, fixa o endpoint oficial do Google no servidor e usa `GEMINI_MODEL=gemini-3.8-flash` por padrão. A chave fica somente no ambiente do processador; navegador, Vue, respostas e logs não a recebem. Para cada requisito são enviados ao Google no máximo cinco chunks recuperados, não o PDF completo automaticamente, mas esses trechos ainda podem conter informação sensível. O nível gratuito pode usar prompts para melhorar produtos do Google; use apenas PDFs fictícios nesta demonstração. Cotas, disponibilidade e elegibilidade gratuita são externas e podem mudar.
+
+O adaptador genérico `openai-compatible` continua disponível para desenvolvimento explícito com `AI_BASE_URL`, `AI_MODEL` e `AI_API_KEY`. Avalie destino, contratos e retenção antes de apontá-lo para outro operador. Nenhuma chave é necessária para percorrer o tour pré-carregado.
 
 ## Riscos e evolução
 

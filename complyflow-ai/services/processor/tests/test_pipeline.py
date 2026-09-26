@@ -112,6 +112,33 @@ def test_keys_alone_never_enable_real_provider(monkeypatch):
     assert isinstance(AnalysisPipeline.from_settings().provider, FakeAIProvider)
 
 
+def test_gemini_provider_uses_official_endpoint_and_free_model_by_default(monkeypatch):
+    from app.pipeline.analyze import AnalysisPipeline
+    from app.providers.openai_compatible import OpenAICompatibleProvider
+
+    monkeypatch.setenv('AI_PROVIDER', 'gemini')
+    monkeypatch.setenv('GEMINI_API_KEY', 'test-only')
+    monkeypatch.delenv('GEMINI_MODEL', raising=False)
+
+    provider = AnalysisPipeline.from_settings().provider
+
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider.base_url == 'https://generativelanguage.googleapis.com/v1beta/openai/'
+    assert provider.model == 'gemini-3.8-flash'
+
+
+def test_gemini_provider_requires_its_dedicated_api_key(monkeypatch):
+    from app.pipeline.analyze import AnalysisPipeline
+    from app.providers.base import ProviderError
+
+    monkeypatch.setenv('AI_PROVIDER', 'gemini')
+    monkeypatch.delenv('GEMINI_API_KEY', raising=False)
+    monkeypatch.setenv('AI_API_KEY', 'must-not-enable-gemini')
+
+    with pytest.raises(ProviderError, match='^provider_not_configured$'):
+        AnalysisPipeline.from_settings()
+
+
 def test_chunk_budget_fails_before_building_embeddings(monkeypatch):
     from app.pipeline import analyze
 
